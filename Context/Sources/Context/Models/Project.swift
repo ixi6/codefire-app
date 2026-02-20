@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-struct Project: Codable, Identifiable, FetchableRecord, MutablePersistableRecord {
+struct Project: Codable, Identifiable, Equatable, FetchableRecord, MutablePersistableRecord {
     var id: String // UUID string
     var name: String
     var path: String
