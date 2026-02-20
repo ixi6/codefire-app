@@ -2,40 +2,105 @@ import SwiftUI
 
 struct TaskCardView: View {
     let task: TaskItem
+    var onTap: (() -> Void)? = nil
+
+    @State private var isHovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(task.title)
-                .font(.system(size: 12, weight: .medium))
-                .lineLimit(2)
+            // Title + priority
+            HStack(alignment: .top, spacing: 6) {
+                if task.priority > 0 {
+                    Image(systemName: task.priorityLevel.icon)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(task.priorityLevel.color)
+                        .frame(width: 12)
+                        .padding(.top, 2)
+                }
+                Text(task.title)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(2)
+            }
 
             if let description = task.description, !description.isEmpty {
                 Text(description)
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundColor(.secondary)
-                    .lineLimit(3)
+                    .lineLimit(2)
+            }
+
+            // Labels
+            let labels = task.labelsArray
+            if !labels.isEmpty {
+                HStack(spacing: 3) {
+                    ForEach(labels.prefix(3), id: \.self) { label in
+                        Text(label)
+                            .font(.system(size: 8, weight: .semibold))
+                            .textCase(.uppercase)
+                            .tracking(0.2)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(
+                                Capsule()
+                                    .fill(TaskItem.labelColor(for: label).opacity(0.12))
+                            )
+                            .foregroundColor(TaskItem.labelColor(for: label))
+                    }
+                    if labels.count > 3 {
+                        Text("+\(labels.count - 3)")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
 
             HStack {
                 // Source badge
                 Text(task.source)
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: 9, weight: .semibold))
+                    .textCase(.uppercase)
+                    .tracking(0.3)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(task.source == "claude" ? Color.blue.opacity(0.15) : Color.gray.opacity(0.15))
-                    .foregroundColor(task.source == "claude" ? .blue : .gray)
-                    .cornerRadius(4)
+                    .background(
+                        Capsule()
+                            .fill(sourceColor.opacity(0.12))
+                    )
+                    .foregroundColor(sourceColor)
 
                 Spacer()
 
                 Text(task.createdAt.formatted(.dateTime.month(.abbreviated).day()))
                     .font(.system(size: 9))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.tertiary)
             }
         }
-        .padding(8)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(6)
-        .shadow(color: .black.opacity(0.05), radius: 1, y: 1)
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(isHovering ? 1 : 0.8))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .stroke(isHovering
+                        ? Color.accentColor.opacity(0.3)
+                        : Color(nsColor: .separatorColor).opacity(0.25),
+                        lineWidth: isHovering ? 1 : 0.5)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap?()
+        }
+        .onHover { hovering in
+            isHovering = hovering
+        }
+    }
+
+    private var sourceColor: Color {
+        switch task.source {
+        case "claude": return .blue
+        case "ai-extracted": return .purple
+        default: return .secondary
+        }
     }
 }

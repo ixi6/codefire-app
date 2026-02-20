@@ -127,13 +127,17 @@ class ProjectDiscovery {
             for file in jsonlFiles {
                 let sessionId = file.deletingPathExtension().lastPathComponent
 
-                // Skip if session already exists
-                let exists = try Session
+                // Check if session already exists
+                let existing = try Session
                     .filter(Session.Columns.id == sessionId)
-                    .fetchCount(dbConn) > 0
-                guard !exists else { continue }
+                    .fetchOne(dbConn)
 
-                // Parse the session file
+                // Skip if session exists AND already has token data
+                if let existing = existing, existing.inputTokens > 0 || existing.outputTokens > 0 {
+                    continue
+                }
+
+                // Parse the session file (new session or backfill tokens)
                 guard let parsed = try? SessionParser.parse(fileURL: file) else { continue }
 
                 let summary = SessionParser.generateSummary(from: parsed)
@@ -157,9 +161,13 @@ class ProjectDiscovery {
                     summary: summary,
                     messageCount: parsed.messageCount,
                     toolUseCount: parsed.toolUseCount,
-                    filesChanged: filesChangedJSON
+                    filesChanged: filesChangedJSON,
+                    inputTokens: parsed.inputTokens,
+                    outputTokens: parsed.outputTokens,
+                    cacheCreationTokens: parsed.cacheCreationTokens,
+                    cacheReadTokens: parsed.cacheReadTokens
                 )
-                try session.insert(dbConn)
+                try session.save(dbConn) // save = insert or update
             }
         }
     }

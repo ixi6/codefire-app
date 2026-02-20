@@ -1,6 +1,11 @@
 import Foundation
 import GRDB
 
+extension Notification.Name {
+    /// Posted when session data has been updated in the database.
+    static let sessionsDidChange = Notification.Name("sessionsDidChange")
+}
+
 @MainActor
 class SessionWatcher: ObservableObject {
     private var fileWatcher: FileWatcher?
@@ -29,7 +34,7 @@ class SessionWatcher: ObservableObject {
 
         fileWatcher = FileWatcher(
             paths: [watchPath],
-            debounceInterval: 30.0
+            debounceInterval: 5.0
         ) { [weak self] paths in
             self?.handleSessionChanges(paths)
         }
@@ -85,7 +90,11 @@ class SessionWatcher: ObservableObject {
                     summary: summary,
                     messageCount: parsed.messageCount,
                     toolUseCount: parsed.toolUseCount,
-                    filesChanged: filesChangedJSON
+                    filesChanged: filesChangedJSON,
+                    inputTokens: parsed.inputTokens,
+                    outputTokens: parsed.outputTokens,
+                    cacheCreationTokens: parsed.cacheCreationTokens,
+                    cacheReadTokens: parsed.cacheReadTokens
                 )
 
                 try db.dbQueue.write { db in
@@ -97,5 +106,8 @@ class SessionWatcher: ObservableObject {
                 print("SessionWatcher: Failed to process \(path): \(error)")
             }
         }
+
+        // Notify views that session data changed so they can refresh.
+        NotificationCenter.default.post(name: .sessionsDidChange, object: nil)
     }
 }

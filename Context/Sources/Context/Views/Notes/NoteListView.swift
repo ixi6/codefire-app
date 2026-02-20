@@ -13,25 +13,29 @@ struct NoteListView: View {
                 // Header
                 HStack {
                     Text("Notes")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                     Spacer()
                     Button {
                         createNote()
                     } label: {
                         Image(systemName: "plus")
-                            .font(.system(size: 12))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .frame(width: 22, height: 22)
+                            .background(Color(nsColor: .controlBackgroundColor))
+                            .cornerRadius(5)
                     }
                     .buttonStyle(.plain)
                     .help("New note")
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.vertical, 10)
 
                 Divider()
 
                 // Note list
                 ScrollView {
-                    LazyVStack(spacing: 1) {
+                    LazyVStack(spacing: 2) {
                         ForEach(sortedNotes) { note in
                             NoteRow(note: note, isSelected: selectedNote?.id == note.id)
                                 .onTapGesture {
@@ -40,6 +44,7 @@ struct NoteListView: View {
                         }
                     }
                     .padding(.vertical, 4)
+                    .padding(.horizontal, 4)
                 }
             }
             .frame(minWidth: 200, idealWidth: 240)
@@ -60,13 +65,16 @@ struct NoteListView: View {
                 )
                 .frame(minWidth: 300)
             } else {
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     Image(systemName: "note.text")
-                        .font(.system(size: 32))
-                        .foregroundColor(.secondary.opacity(0.5))
+                        .font(.system(size: 28))
+                        .foregroundStyle(.tertiary)
                     Text("Select or create a note")
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.secondary)
-                        .font(.system(size: 14))
+                    Text("Use notes to capture project context")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -74,6 +82,9 @@ struct NoteListView: View {
         .onAppear { loadNotes() }
         .onChange(of: appState.currentProject) { _, _ in
             selectedNote = nil
+            loadNotes()
+        }
+        .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
             loadNotes()
         }
     }
@@ -187,6 +198,7 @@ struct NoteListView: View {
 struct NoteRow: View {
     let note: Note
     let isSelected: Bool
+    @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -203,15 +215,22 @@ struct NoteRow: View {
 
                 Text(note.updatedAt, style: .relative)
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.tertiary)
             }
 
             Spacer()
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
-        .cornerRadius(4)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected
+                      ? Color.accentColor.opacity(0.15)
+                      : isHovering ? Color(nsColor: .controlBackgroundColor).opacity(0.5) : Color.clear)
+        )
         .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovering = hovering
+        }
     }
 }

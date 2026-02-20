@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "context-tasks": {
+      "command": "/Applications/Context.app/Contents/MacOS/ContextMCP"
+    }
+  }
+}

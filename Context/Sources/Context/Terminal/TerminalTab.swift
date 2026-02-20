@@ -8,9 +8,11 @@ class TerminalTab: Identifiable, ObservableObject {
     let id = UUID()
     @Published var title: String
     let initialDirectory: String
+    let initialCommand: String?
 
-    init(title: String = "Terminal", initialDirectory: String) {
+    init(title: String = "Terminal", initialDirectory: String, initialCommand: String? = nil) {
         self.title = title
         self.initialDirectory = initialDirectory
+        self.initialCommand = initialCommand
     }
 }

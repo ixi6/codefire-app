@@ -13,6 +13,10 @@ struct Session: Codable, Identifiable, FetchableRecord, MutablePersistableRecord
     var messageCount: Int
     var toolUseCount: Int
     var filesChanged: String? // JSON array
+    var inputTokens: Int
+    var outputTokens: Int
+    var cacheCreationTokens: Int
+    var cacheReadTokens: Int
 
     static let databaseTableName = "sessions"
 
@@ -28,6 +32,10 @@ struct Session: Codable, Identifiable, FetchableRecord, MutablePersistableRecord
         static let messageCount = Column(CodingKeys.messageCount)
         static let toolUseCount = Column(CodingKeys.toolUseCount)
         static let filesChanged = Column(CodingKeys.filesChanged)
+        static let inputTokens = Column(CodingKeys.inputTokens)
+        static let outputTokens = Column(CodingKeys.outputTokens)
+        static let cacheCreationTokens = Column(CodingKeys.cacheCreationTokens)
+        static let cacheReadTokens = Column(CodingKeys.cacheReadTokens)
     }
 
     // Convenience: decode files changed as array
@@ -37,5 +45,44 @@ struct Session: Codable, Identifiable, FetchableRecord, MutablePersistableRecord
               let array = try? JSONDecoder().decode([String].self, from: data)
         else { return [] }
         return array
+    }
+
+    /// Estimated session cost in USD based on model pricing.
+    var estimatedCost: Double {
+        SessionCost.calculate(
+            model: model,
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            cacheCreationTokens: cacheCreationTokens,
+            cacheReadTokens: cacheReadTokens
+        )
+    }
+}
+
+// MARK: - Shared Cost Calculation
+
+/// Shared pricing logic used by both Session (historical) and LiveSessionMonitor (real-time).
+enum SessionCost {
+    /// Per-million-token pricing by model family: (input, output, cacheWrite, cacheRead)
+    static func pricing(for model: String?) -> (input: Double, output: Double, cacheWrite: Double, cacheRead: Double) {
+        guard let m = model else { return (15.0, 75.0, 18.75, 1.50) }
+        if m.contains("opus")   { return (15.0, 75.0, 18.75, 1.50) }
+        if m.contains("sonnet") { return (3.0, 15.0, 3.75, 0.30) }
+        if m.contains("haiku")  { return (0.80, 4.0, 1.0, 0.08) }
+        return (15.0, 75.0, 18.75, 1.50) // default to Opus pricing
+    }
+
+    static func calculate(
+        model: String?,
+        inputTokens: Int,
+        outputTokens: Int,
+        cacheCreationTokens: Int,
+        cacheReadTokens: Int
+    ) -> Double {
+        let p = pricing(for: model)
+        return Double(inputTokens)          / 1_000_000 * p.input
+             + Double(outputTokens)         / 1_000_000 * p.output
+             + Double(cacheCreationTokens)  / 1_000_000 * p.cacheWrite
+             + Double(cacheReadTokens)      / 1_000_000 * p.cacheRead
     }
 }

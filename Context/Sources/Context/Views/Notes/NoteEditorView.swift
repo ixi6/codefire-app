@@ -25,6 +25,9 @@ struct NoteEditorView: View {
                     Image(systemName: note.pinned ? "pin.fill" : "pin")
                         .font(.system(size: 12))
                         .foregroundColor(note.pinned ? .orange : .secondary)
+                        .frame(width: 26, height: 26)
+                        .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                        .cornerRadius(6)
                 }
                 .buttonStyle(.plain)
                 .help(note.pinned ? "Unpin note" : "Pin note")
@@ -34,15 +37,19 @@ struct NoteEditorView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 11))
+                            .font(.system(size: 10))
                         Text("Save")
-                            .font(.system(size: 12))
+                            .font(.system(size: 11, weight: .medium))
                     }
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 5)
                     .background(Color.accentColor.opacity(0.15))
                     .foregroundColor(.accentColor)
-                    .cornerRadius(5)
+                    .cornerRadius(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.accentColor.opacity(0.2), lineWidth: 0.5)
+                    )
                 }
                 .buttonStyle(.plain)
 
@@ -50,14 +57,17 @@ struct NoteEditorView: View {
                     onDelete()
                 } label: {
                     Image(systemName: "trash")
-                        .font(.system(size: 12))
-                        .foregroundColor(.red.opacity(0.8))
+                        .font(.system(size: 11))
+                        .foregroundColor(.red.opacity(0.7))
+                        .frame(width: 26, height: 26)
+                        .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                        .cornerRadius(6)
                 }
                 .buttonStyle(.plain)
                 .help("Delete note")
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
 
             Divider()
 
@@ -65,7 +75,7 @@ struct NoteEditorView: View {
             TextEditor(text: $content)
                 .font(.system(size: 13, design: .monospaced))
                 .scrollContentBackground(.hidden)
-                .padding(8)
+                .padding(12)
         }
         .onAppear {
             title = note.title

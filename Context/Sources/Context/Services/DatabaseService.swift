@@ -104,6 +104,39 @@ class DatabaseService {
             }
         }
 
+        migrator.registerMigration("v2_addTokenColumns") { db in
+            try db.alter(table: "sessions") { t in
+                t.add(column: "inputTokens", .integer).notNull().defaults(to: 0)
+                t.add(column: "outputTokens", .integer).notNull().defaults(to: 0)
+                t.add(column: "cacheCreationTokens", .integer).notNull().defaults(to: 0)
+                t.add(column: "cacheReadTokens", .integer).notNull().defaults(to: 0)
+            }
+        }
+
+        migrator.registerMigration("v3_addTaskLabels") { db in
+            try db.alter(table: "taskItems") { t in
+                t.add(column: "labels", .text) // JSON array of strings
+            }
+        }
+
+        migrator.registerMigration("v4_addTaskAttachments") { db in
+            try db.alter(table: "taskItems") { t in
+                t.add(column: "attachments", .text) // JSON array of file paths
+            }
+        }
+
+        migrator.registerMigration("v5_createTaskNotes") { db in
+            try db.create(table: "taskNotes") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("taskId", .integer).notNull()
+                    .references("taskItems", onDelete: .cascade)
+                t.column("content", .text).notNull()
+                t.column("source", .text).notNull().defaults(to: "manual") // "manual", "claude", "system"
+                t.column("sessionId", .text) // which Claude session added this
+                t.column("createdAt", .datetime).notNull()
+            }
+        }
+
         migrator.registerMigration("v1_createFTS") { db in
             // Full-text search on sessions
             try db.create(virtualTable: "sessionsFts", using: FTS5()) { t in

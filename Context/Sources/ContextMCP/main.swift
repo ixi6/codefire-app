@@ -1,0 +1,1003 @@
+import Foundation
+import GRDB
+
+// MARK: - Database Access
+
+/// Opens the same database used by the Context app.
+func openDatabase() throws -> DatabaseQueue {
+    let appSupportURL = FileManager.default.urls(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask
+    ).first!.appendingPathComponent("Context", isDirectory: true)
+
+    let dbPath = appSupportURL.appendingPathComponent("context.db").path
+    guard FileManager.default.fileExists(atPath: dbPath) else {
+        throw MCPError(message: "Context database not found at \(dbPath). Launch Context.app first.")
+    }
+    return try DatabaseQueue(path: dbPath)
+}
+
+// MARK: - Models (lightweight copies)
+
+struct TaskItem: Codable, FetchableRecord, MutablePersistableRecord {
+    var id: Int64?
+    var projectId: String
+    var title: String
+    var description: String?
+    var status: String
+    var priority: Int
+    var sourceSession: String?
+    var source: String
+    var createdAt: Date
+    var completedAt: Date?
+    var labels: String?
+    var attachments: String?
+    static let databaseTableName = "taskItems"
+
+    mutating func didInsert(_ inserted: InsertionSuccess) {
+        id = inserted.rowID
+    }
+}
+
+struct TaskNote: Codable, FetchableRecord, MutablePersistableRecord {
+    var id: Int64?
+    var taskId: Int64
+    var content: String
+    var source: String
+    var sessionId: String?
+    var createdAt: Date
+    static let databaseTableName = "taskNotes"
+
+    mutating func didInsert(_ inserted: InsertionSuccess) {
+        id = inserted.rowID
+    }
+}
+
+struct Project: Codable, FetchableRecord, TableRecord {
+    var id: String
+    var name: String
+    var path: String
+    static let databaseTableName = "projects"
+}
+
+struct Note: Codable, FetchableRecord, MutablePersistableRecord {
+    var id: Int64?
+    var projectId: String
+    var title: String
+    var content: String
+    var pinned: Bool
+    var sessionId: String?
+    var createdAt: Date
+    var updatedAt: Date
+    static let databaseTableName = "notes"
+
+    mutating func didInsert(_ inserted: InsertionSuccess) {
+        id = inserted.rowID
+    }
+}
+
+// MARK: - MCP Protocol Types
+
+struct MCPError: Error {
+    let message: String
+}
+
+struct JSONRPCRequest: Decodable {
+    let jsonrpc: String
+    let id: JSONRPCID?
+    let method: String
+    let params: [String: AnyCodable]?
+}
+
+enum JSONRPCID: Codable, Equatable {
+    case int(Int)
+    case string(String)
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let i = try? container.decode(Int.self) { self = .int(i); return }
+        if let s = try? container.decode(String.self) { self = .string(s); return }
+        throw DecodingError.typeMismatch(JSONRPCID.self, .init(codingPath: [], debugDescription: "Expected int or string"))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .int(let i): try container.encode(i)
+        case .string(let s): try container.encode(s)
+        }
+    }
+}
+
+/// Minimal any-value wrapper for JSON decoding.
+struct AnyCodable: Codable {
+    let value: Any
+
+    init(_ value: Any) { self.value = value }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { value = NSNull(); return }
+        if let b = try? container.decode(Bool.self) { value = b; return }
+        if let i = try? container.decode(Int.self) { value = i; return }
+        if let d = try? container.decode(Double.self) { value = d; return }
+        if let s = try? container.decode(String.self) { value = s; return }
+        if let a = try? container.decode([AnyCodable].self) { value = a.map(\.value); return }
+        if let o = try? container.decode([String: AnyCodable].self) { value = o.mapValues(\.value); return }
+        throw DecodingError.typeMismatch(AnyCodable.self, .init(codingPath: [], debugDescription: "Unsupported type"))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch value {
+        case is NSNull: try container.encodeNil()
+        case let b as Bool: try container.encode(b)
+        case let i as Int: try container.encode(i)
+        case let d as Double: try container.encode(d)
+        case let s as String: try container.encode(s)
+        default: try container.encodeNil()
+        }
+    }
+}
+
+// MARK: - MCP Connection Status
+
+/// Writes a status file so the Context GUI can show an MCP connection indicator.
+class MCPConnectionStatus {
+    let statusDir: URL
+    let statusFile: URL
+    let pid: Int32
+
+    init() {
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first!.appendingPathComponent("Context/mcp-connections", isDirectory: true)
+        statusDir = appSupport
+        pid = ProcessInfo.processInfo.processIdentifier
+        statusFile = appSupport.appendingPathComponent("\(pid).json")
+    }
+
+    func register(projectId: String?, projectName: String?, cwd: String) {
+        try? FileManager.default.createDirectory(at: statusDir, withIntermediateDirectories: true)
+        writeStatus(projectId: projectId, projectName: projectName, cwd: cwd)
+    }
+
+    func heartbeat(projectId: String?, projectName: String?, cwd: String) {
+        writeStatus(projectId: projectId, projectName: projectName, cwd: cwd)
+    }
+
+    func deregister() {
+        try? FileManager.default.removeItem(at: statusFile)
+    }
+
+    private func writeStatus(projectId: String?, projectName: String?, cwd: String) {
+        let status: [String: Any] = [
+            "pid": Int(pid),
+            "cwd": cwd,
+            "projectId": projectId as Any,
+            "projectName": projectName as Any,
+            "connectedAt": ISO8601DateFormatter().string(from: Date()),
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: status.compactMapValues { $0 }) {
+            try? data.write(to: statusFile, options: .atomic)
+        }
+    }
+}
+
+// MARK: - MCP Server
+
+class MCPServer {
+    let db: DatabaseQueue
+    let detectedProjectId: String?
+    let detectedProjectName: String?
+    let workingDirectory: String
+    let connectionStatus: MCPConnectionStatus
+
+    init(db: DatabaseQueue) {
+        self.db = db
+        self.workingDirectory = FileManager.default.currentDirectoryPath
+        self.connectionStatus = MCPConnectionStatus()
+
+        // Auto-detect project from working directory
+        var foundId: String? = nil
+        var foundName: String? = nil
+        let cwd = self.workingDirectory
+
+        if let match = try? db.read({ db -> Project? in
+            // Exact match first
+            if let exact = try Project.filter(Column("path") == cwd).fetchOne(db) {
+                return exact
+            }
+            // Try parent directories (for subdirectories like /project/src)
+            let projects = try Project.fetchAll(db)
+            var best: Project? = nil
+            var bestLen = 0
+            for p in projects {
+                if cwd.hasPrefix(p.path) && p.path.count > bestLen {
+                    best = p
+                    bestLen = p.path.count
+                }
+            }
+            return best
+        }) {
+            foundId = match.id
+            foundName = match.name
+        }
+
+        self.detectedProjectId = foundId
+        self.detectedProjectName = foundName
+
+        // Log detected project to stderr for debugging
+        if let name = foundName {
+            FileHandle.standardError.write("ContextMCP: detected project '\(name)' from \(cwd)\n".data(using: .utf8)!)
+        } else {
+            FileHandle.standardError.write("ContextMCP: no project matched for \(cwd)\n".data(using: .utf8)!)
+        }
+
+        // Register connection
+        connectionStatus.register(projectId: foundId, projectName: foundName, cwd: cwd)
+    }
+
+    /// Resolves project_id from args or falls back to auto-detected project.
+    func resolveProjectId(_ args: [String: Any]) throws -> String {
+        if let explicit = args["project_id"] as? String {
+            return explicit
+        }
+        guard let detected = detectedProjectId else {
+            throw MCPError(message: "project_id is required (could not auto-detect from working directory)")
+        }
+        return detected
+    }
+
+    func run() {
+        // Clean up on exit
+        defer { connectionStatus.deregister() }
+
+        // Handle SIGTERM/SIGINT for clean shutdown
+        signal(SIGTERM) { _ in
+            // Status file cleanup happens in defer
+            exit(0)
+        }
+        signal(SIGINT) { _ in
+            exit(0)
+        }
+
+        while let line = readLine(strippingNewline: true) {
+            guard !line.isEmpty else { continue }
+            guard let data = line.data(using: .utf8) else { continue }
+
+            // Update heartbeat on each request
+            connectionStatus.heartbeat(
+                projectId: detectedProjectId,
+                projectName: detectedProjectName,
+                cwd: workingDirectory
+            )
+
+            do {
+                let request = try JSONDecoder.mcp.decode(JSONRPCRequest.self, from: data)
+                let response = handleRequest(request)
+                write(response)
+            } catch {
+                let errResp = errorResponse(id: nil, code: -32700, message: "Parse error: \(error.localizedDescription)")
+                write(errResp)
+            }
+        }
+    }
+
+    func handleRequest(_ req: JSONRPCRequest) -> [String: Any] {
+        switch req.method {
+        case "initialize":
+            return successResponse(id: req.id, result: [
+                "protocolVersion": "2024-11-05",
+                "capabilities": ["tools": [:]],
+                "serverInfo": ["name": "context-tasks", "version": "1.0.0"]
+            ])
+
+        case "notifications/initialized":
+            return [:] // no response for notifications
+
+        case "tools/list":
+            return successResponse(id: req.id, result: ["tools": toolDefinitions()])
+
+        case "tools/call":
+            return handleToolCall(req)
+
+        default:
+            return errorResponse(id: req.id, code: -32601, message: "Method not found: \(req.method)")
+        }
+    }
+
+    // MARK: - Tool Definitions
+
+    func toolDefinitions() -> [[String: Any]] {
+        [
+            [
+                "name": "get_current_project",
+                "description": "Get the auto-detected project for this session based on the working directory. Call this first to confirm which project you're working with.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [:] as [String: Any]
+                ]
+            ],
+            [
+                "name": "list_projects",
+                "description": "List all projects tracked by Context",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [:] as [String: Any]
+                ]
+            ],
+            [
+                "name": "list_tasks",
+                "description": "List tasks for a project. Returns task ID, title, status, priority, and description. project_id is auto-detected from working directory if omitted.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "project_id": ["type": "string", "description": "Project ID (auto-detected if omitted)"],
+                        "status": ["type": "string", "description": "Filter by status: todo, in_progress, done. Omit for all.", "enum": ["todo", "in_progress", "done"]],
+                    ]
+                ]
+            ],
+            [
+                "name": "get_task",
+                "description": "Get full details of a task by ID, including notes and attachments.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "task_id": ["type": "integer", "description": "Task ID"]
+                    ],
+                    "required": ["task_id"]
+                ]
+            ],
+            [
+                "name": "create_task",
+                "description": "Create a new task in a project. project_id is auto-detected from working directory if omitted.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "project_id": ["type": "string", "description": "Project ID (auto-detected if omitted)"],
+                        "title": ["type": "string", "description": "Task title"],
+                        "description": ["type": "string", "description": "Task description (optional)"],
+                        "priority": ["type": "integer", "description": "Priority: 0=none, 1=low, 2=medium, 3=high, 4=urgent"],
+                        "labels": ["type": "array", "items": ["type": "string"], "description": "Labels (e.g. bug, feature, refactor)"],
+                    ],
+                    "required": ["title"]
+                ]
+            ],
+            [
+                "name": "update_task",
+                "description": "Update a task's fields (status, priority, title, description, labels).",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "task_id": ["type": "integer", "description": "Task ID"],
+                        "status": ["type": "string", "description": "New status", "enum": ["todo", "in_progress", "done"]],
+                        "priority": ["type": "integer", "description": "New priority (0-4)"],
+                        "title": ["type": "string", "description": "New title"],
+                        "description": ["type": "string", "description": "New description"],
+                        "labels": ["type": "array", "items": ["type": "string"], "description": "New labels array"],
+                    ],
+                    "required": ["task_id"]
+                ]
+            ],
+            [
+                "name": "add_task_note",
+                "description": "Add a note/comment to a task. Use this to log progress, decisions, or context.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "task_id": ["type": "integer", "description": "Task ID"],
+                        "content": ["type": "string", "description": "Note content"],
+                        "session_id": ["type": "string", "description": "Claude session ID (auto-detected if omitted)"],
+                    ],
+                    "required": ["task_id", "content"]
+                ]
+            ],
+            [
+                "name": "list_task_notes",
+                "description": "List all notes for a task.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "task_id": ["type": "integer", "description": "Task ID"]
+                    ],
+                    "required": ["task_id"]
+                ]
+            ],
+            [
+                "name": "list_notes",
+                "description": "List all project-level notes. These are rich notes (title + content) for capturing project context, decisions, patterns, and reference material. project_id is auto-detected from working directory if omitted.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "project_id": ["type": "string", "description": "Project ID (auto-detected if omitted)"],
+                        "pinned_only": ["type": "boolean", "description": "If true, only return pinned notes"],
+                    ]
+                ]
+            ],
+            [
+                "name": "get_note",
+                "description": "Get the full content of a project note by ID.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "note_id": ["type": "integer", "description": "Note ID"]
+                    ],
+                    "required": ["note_id"]
+                ]
+            ],
+            [
+                "name": "create_note",
+                "description": "Create a new project-level note. Use for capturing architectural decisions, discovered patterns, session learnings, or any context that should persist. project_id is auto-detected from working directory if omitted.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "project_id": ["type": "string", "description": "Project ID (auto-detected if omitted)"],
+                        "title": ["type": "string", "description": "Note title"],
+                        "content": ["type": "string", "description": "Note content (supports markdown)"],
+                        "pinned": ["type": "boolean", "description": "Pin this note to the top (default: false)"],
+                        "session_id": ["type": "string", "description": "Claude session ID that created this note (optional)"],
+                    ],
+                    "required": ["title"]
+                ]
+            ],
+            [
+                "name": "update_note",
+                "description": "Update a project note's title, content, or pinned status.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "note_id": ["type": "integer", "description": "Note ID"],
+                        "title": ["type": "string", "description": "New title"],
+                        "content": ["type": "string", "description": "New content"],
+                        "pinned": ["type": "boolean", "description": "Pin/unpin the note"],
+                    ],
+                    "required": ["note_id"]
+                ]
+            ],
+            [
+                "name": "delete_note",
+                "description": "Delete a project note by ID.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "note_id": ["type": "integer", "description": "Note ID"]
+                    ],
+                    "required": ["note_id"]
+                ]
+            ],
+            [
+                "name": "search_notes",
+                "description": "Full-text search across all project notes (titles and content). project_id is auto-detected from working directory if omitted.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "project_id": ["type": "string", "description": "Project ID (auto-detected if omitted)"],
+                        "query": ["type": "string", "description": "Search query"],
+                    ],
+                    "required": ["query"]
+                ]
+            ],
+        ]
+    }
+
+    // MARK: - Tool Handlers
+
+    func handleToolCall(_ req: JSONRPCRequest) -> [String: Any] {
+        let params = req.params ?? [:]
+        guard let toolName = params["name"]?.value as? String else {
+            return errorResponse(id: req.id, code: -32602, message: "Missing tool name")
+        }
+        let args = (params["arguments"]?.value as? [String: Any]) ?? [:]
+
+        do {
+            let result: String
+            switch toolName {
+            case "get_current_project": result = try getCurrentProject()
+            case "list_projects":    result = try listProjects()
+            case "list_tasks":       result = try listTasks(args)
+            case "get_task":         result = try getTask(args)
+            case "create_task":      result = try createTask(args)
+            case "update_task":      result = try updateTask(args)
+            case "add_task_note":    result = try addTaskNote(args)
+            case "list_task_notes":  result = try listTaskNotes(args)
+            case "list_notes":       result = try listNotes(args)
+            case "get_note":         result = try getNote(args)
+            case "create_note":      result = try createNote(args)
+            case "update_note":      result = try updateNote(args)
+            case "delete_note":      result = try deleteNote(args)
+            case "search_notes":     result = try searchNotes(args)
+            default:
+                return errorResponse(id: req.id, code: -32602, message: "Unknown tool: \(toolName)")
+            }
+
+            return successResponse(id: req.id, result: [
+                "content": [["type": "text", "text": result]]
+            ])
+        } catch {
+            return successResponse(id: req.id, result: [
+                "content": [["type": "text", "text": "Error: \(error.localizedDescription)"]],
+                "isError": true
+            ])
+        }
+    }
+
+    // MARK: - Tool Implementations
+
+    func getCurrentProject() throws -> String {
+        guard let id = detectedProjectId, let name = detectedProjectName else {
+            return "No project detected for working directory: \(workingDirectory)\nUse list_projects to find the correct project_id and pass it explicitly."
+        }
+        return "Current project: \(name)\nProject ID: \(id)\nWorking directory: \(workingDirectory)\n\nYou can omit project_id from tool calls — it will default to this project."
+    }
+
+    func listProjects() throws -> String {
+        let projects = try db.read { db in
+            try Project.fetchAll(db)
+        }
+        var lines = ["Projects (\(projects.count)):"]
+        for p in projects {
+            lines.append("  [\(p.id)] \(p.name) — \(p.path)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    func listTasks(_ args: [String: Any]) throws -> String {
+        let projectId = try resolveProjectId(args)
+        let statusFilter = args["status"] as? String
+
+        let tasks = try db.read { db -> [TaskItem] in
+            var query = TaskItem.filter(Column("projectId") == projectId)
+            if let status = statusFilter {
+                query = query.filter(Column("status") == status)
+            }
+            return try query.order(Column("priority").desc, Column("createdAt").desc).fetchAll(db)
+        }
+
+        if tasks.isEmpty {
+            return "No tasks found."
+        }
+
+        var lines = ["Tasks (\(tasks.count)):"]
+        for t in tasks {
+            let priority = ["none", "low", "medium", "high", "urgent"][min(t.priority, 4)]
+            let labels = t.labels.flatMap { l -> String? in
+                guard let data = l.data(using: .utf8),
+                      let arr = try? JSONDecoder().decode([String].self, from: data)
+                else { return nil }
+                return arr.joined(separator: ", ")
+            }
+            var line = "  #\(t.id ?? 0) [\(t.status)] (\(priority)) \(t.title)"
+            if let labels { line += " [\(labels)]" }
+            lines.append(line)
+            if let desc = t.description {
+                let preview = desc.prefix(100).replacingOccurrences(of: "\n", with: " ")
+                lines.append("    \(preview)\(desc.count > 100 ? "..." : "")")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    func getTask(_ args: [String: Any]) throws -> String {
+        guard let taskId = args["task_id"] as? Int ?? (args["task_id"] as? Int64).map(Int.init) else {
+            throw MCPError(message: "task_id is required")
+        }
+
+        guard let task = try db.read({ db in
+            try TaskItem.fetchOne(db, key: Int64(taskId))
+        }) else {
+            throw MCPError(message: "Task #\(taskId) not found")
+        }
+
+        let notes = try db.read { db in
+            try TaskNote.filter(Column("taskId") == Int64(taskId))
+                .order(Column("createdAt").asc)
+                .fetchAll(db)
+        }
+
+        var lines = [
+            "Task #\(task.id ?? 0): \(task.title)",
+            "Status: \(task.status)",
+            "Priority: \(["none", "low", "medium", "high", "urgent"][min(task.priority, 4)])",
+            "Source: \(task.source)",
+            "Created: \(task.createdAt)",
+        ]
+        if let desc = task.description { lines.append("Description:\n\(desc)") }
+        if let labels = task.labels { lines.append("Labels: \(labels)") }
+        if let attachments = task.attachments { lines.append("Attachments: \(attachments)") }
+
+        if !notes.isEmpty {
+            lines.append("\nNotes (\(notes.count)):")
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMM d, HH:mm"
+            for note in notes {
+                lines.append("  [\(formatter.string(from: note.createdAt))] (\(note.source)) \(note.content)")
+            }
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    func createTask(_ args: [String: Any]) throws -> String {
+        let projectId = try resolveProjectId(args)
+        guard let title = args["title"] as? String, !title.isEmpty else {
+            throw MCPError(message: "title is required")
+        }
+
+        let description = args["description"] as? String
+        let priority = args["priority"] as? Int ?? 0
+
+        var labelsJSON: String? = nil
+        if let labels = args["labels"] as? [String], !labels.isEmpty {
+            if let data = try? JSONEncoder().encode(labels),
+               let str = String(data: data, encoding: .utf8) {
+                labelsJSON = str
+            }
+        }
+
+        var task = TaskItem(
+            id: nil,
+            projectId: projectId,
+            title: title,
+            description: description,
+            status: "todo",
+            priority: min(max(priority, 0), 4),
+            sourceSession: nil,
+            source: "claude",
+            createdAt: Date(),
+            completedAt: nil,
+            labels: labelsJSON,
+            attachments: nil
+        )
+
+        try db.write { db in
+            try task.insert(db)
+        }
+
+        return "Created task #\(task.id ?? 0): \(title)"
+    }
+
+    func updateTask(_ args: [String: Any]) throws -> String {
+        guard let taskId = args["task_id"] as? Int ?? (args["task_id"] as? Int64).map(Int.init) else {
+            throw MCPError(message: "task_id is required")
+        }
+
+        guard var task = try db.read({ db in
+            try TaskItem.fetchOne(db, key: Int64(taskId))
+        }) else {
+            throw MCPError(message: "Task #\(taskId) not found")
+        }
+
+        var changes: [String] = []
+
+        if let status = args["status"] as? String {
+            task.status = status
+            if status == "done" { task.completedAt = Date() }
+            else { task.completedAt = nil }
+            changes.append("status → \(status)")
+        }
+        if let priority = args["priority"] as? Int {
+            task.priority = min(max(priority, 0), 4)
+            changes.append("priority → \(priority)")
+        }
+        if let title = args["title"] as? String {
+            task.title = title
+            changes.append("title updated")
+        }
+        if let desc = args["description"] as? String {
+            task.description = desc
+            changes.append("description updated")
+        }
+        if let labels = args["labels"] as? [String] {
+            if labels.isEmpty {
+                task.labels = nil
+            } else if let data = try? JSONEncoder().encode(labels),
+                      let str = String(data: data, encoding: .utf8) {
+                task.labels = str
+            }
+            changes.append("labels → \(labels.joined(separator: ", "))")
+        }
+
+        if changes.isEmpty {
+            return "No changes specified for task #\(taskId)"
+        }
+
+        try db.write { db in
+            try task.update(db)
+        }
+
+        return "Updated task #\(taskId): \(changes.joined(separator: ", "))"
+    }
+
+    func addTaskNote(_ args: [String: Any]) throws -> String {
+        guard let taskId = args["task_id"] as? Int ?? (args["task_id"] as? Int64).map(Int.init) else {
+            throw MCPError(message: "task_id is required")
+        }
+        guard let content = args["content"] as? String, !content.isEmpty else {
+            throw MCPError(message: "content is required")
+        }
+
+        // Verify task exists
+        guard try db.read({ db in
+            try TaskItem.fetchOne(db, key: Int64(taskId))
+        }) != nil else {
+            throw MCPError(message: "Task #\(taskId) not found")
+        }
+
+        let sessionId = args["session_id"] as? String
+
+        var note = TaskNote(
+            id: nil,
+            taskId: Int64(taskId),
+            content: content,
+            source: "claude",
+            sessionId: sessionId,
+            createdAt: Date()
+        )
+
+        try db.write { db in
+            try note.insert(db)
+        }
+
+        return "Added note to task #\(taskId)"
+    }
+
+    func listTaskNotes(_ args: [String: Any]) throws -> String {
+        guard let taskId = args["task_id"] as? Int ?? (args["task_id"] as? Int64).map(Int.init) else {
+            throw MCPError(message: "task_id is required")
+        }
+
+        let notes = try db.read { db in
+            try TaskNote.filter(Column("taskId") == Int64(taskId))
+                .order(Column("createdAt").asc)
+                .fetchAll(db)
+        }
+
+        if notes.isEmpty {
+            return "No notes for task #\(taskId)"
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, HH:mm"
+        var lines = ["Notes for task #\(taskId) (\(notes.count)):"]
+        for note in notes {
+            lines.append("  [\(formatter.string(from: note.createdAt))] (\(note.source)) \(note.content)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Project Notes
+
+    func listNotes(_ args: [String: Any]) throws -> String {
+        let projectId = try resolveProjectId(args)
+        let pinnedOnly = args["pinned_only"] as? Bool ?? false
+
+        let notes = try db.read { db -> [Note] in
+            var query = Note.filter(Column("projectId") == projectId)
+            if pinnedOnly {
+                query = query.filter(Column("pinned") == true)
+            }
+            return try query.order(Column("pinned").desc, Column("updatedAt").desc).fetchAll(db)
+        }
+
+        if notes.isEmpty {
+            return "No notes found."
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, HH:mm"
+        var lines = ["Notes (\(notes.count)):"]
+        for note in notes {
+            let pin = note.pinned ? " [pinned]" : ""
+            let preview = note.content.prefix(80).replacingOccurrences(of: "\n", with: " ")
+            lines.append("  #\(note.id ?? 0)\(pin) \(note.title)")
+            lines.append("    Updated: \(formatter.string(from: note.updatedAt))")
+            if !preview.isEmpty {
+                lines.append("    \(preview)\(note.content.count > 80 ? "..." : "")")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    func getNote(_ args: [String: Any]) throws -> String {
+        guard let noteId = args["note_id"] as? Int ?? (args["note_id"] as? Int64).map(Int.init) else {
+            throw MCPError(message: "note_id is required")
+        }
+
+        guard let note = try db.read({ db in
+            try Note.fetchOne(db, key: Int64(noteId))
+        }) else {
+            throw MCPError(message: "Note #\(noteId) not found")
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        var lines = [
+            "Note #\(note.id ?? 0): \(note.title)",
+            "Pinned: \(note.pinned ? "yes" : "no")",
+            "Created: \(formatter.string(from: note.createdAt))",
+            "Updated: \(formatter.string(from: note.updatedAt))",
+        ]
+        if let sid = note.sessionId { lines.append("Session: \(sid)") }
+        lines.append("\n\(note.content)")
+        return lines.joined(separator: "\n")
+    }
+
+    func createNote(_ args: [String: Any]) throws -> String {
+        let projectId = try resolveProjectId(args)
+        guard let title = args["title"] as? String, !title.isEmpty else {
+            throw MCPError(message: "title is required")
+        }
+
+        let content = args["content"] as? String ?? ""
+        let pinned = args["pinned"] as? Bool ?? false
+        let sessionId = args["session_id"] as? String
+        let now = Date()
+
+        var note = Note(
+            id: nil,
+            projectId: projectId,
+            title: title,
+            content: content,
+            pinned: pinned,
+            sessionId: sessionId,
+            createdAt: now,
+            updatedAt: now
+        )
+
+        try db.write { db in
+            try note.insert(db)
+        }
+
+        return "Created note #\(note.id ?? 0): \(title)"
+    }
+
+    func updateNote(_ args: [String: Any]) throws -> String {
+        guard let noteId = args["note_id"] as? Int ?? (args["note_id"] as? Int64).map(Int.init) else {
+            throw MCPError(message: "note_id is required")
+        }
+
+        guard var note = try db.read({ db in
+            try Note.fetchOne(db, key: Int64(noteId))
+        }) else {
+            throw MCPError(message: "Note #\(noteId) not found")
+        }
+
+        var changes: [String] = []
+
+        if let title = args["title"] as? String {
+            note.title = title
+            changes.append("title updated")
+        }
+        if let content = args["content"] as? String {
+            note.content = content
+            changes.append("content updated")
+        }
+        if let pinned = args["pinned"] as? Bool {
+            note.pinned = pinned
+            changes.append(pinned ? "pinned" : "unpinned")
+        }
+
+        if changes.isEmpty {
+            return "No changes specified for note #\(noteId)"
+        }
+
+        note.updatedAt = Date()
+
+        try db.write { db in
+            try note.update(db)
+        }
+
+        return "Updated note #\(noteId): \(changes.joined(separator: ", "))"
+    }
+
+    func deleteNote(_ args: [String: Any]) throws -> String {
+        guard let noteId = args["note_id"] as? Int ?? (args["note_id"] as? Int64).map(Int.init) else {
+            throw MCPError(message: "note_id is required")
+        }
+
+        let deleted = try db.write { db in
+            try Note.deleteOne(db, key: Int64(noteId))
+        }
+
+        if deleted {
+            return "Deleted note #\(noteId)"
+        } else {
+            throw MCPError(message: "Note #\(noteId) not found")
+        }
+    }
+
+    func searchNotes(_ args: [String: Any]) throws -> String {
+        let projectId = try resolveProjectId(args)
+        guard let query = args["query"] as? String, !query.isEmpty else {
+            throw MCPError(message: "query is required")
+        }
+
+        // Use FTS5 search via raw SQL joining notesFts virtual table
+        let notes = try db.read { db in
+            let sql = """
+                SELECT notes.* FROM notes
+                JOIN notesFts ON notesFts.rowid = notes.id
+                WHERE notes.projectId = ?
+                AND notesFts MATCH ?
+                ORDER BY notes.updatedAt DESC
+                """
+            return try Note.fetchAll(db, sql: sql, arguments: [projectId, query])
+        }
+
+        if notes.isEmpty {
+            return "No notes matching '\(query)'"
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, HH:mm"
+        var lines = ["Search results for '\(query)' (\(notes.count)):"]
+        for note in notes {
+            let pin = note.pinned ? " [pinned]" : ""
+            let preview = note.content.prefix(100).replacingOccurrences(of: "\n", with: " ")
+            lines.append("  #\(note.id ?? 0)\(pin) \(note.title)")
+            if !preview.isEmpty {
+                lines.append("    \(preview)\(note.content.count > 100 ? "..." : "")")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - JSON-RPC Helpers
+
+    func successResponse(id: JSONRPCID?, result: [String: Any]) -> [String: Any] {
+        var resp: [String: Any] = ["jsonrpc": "2.0", "result": result]
+        if let id { resp["id"] = id == .int(0) ? 0 : (id == .string("") ? "" : idValue(id)) }
+        return resp
+    }
+
+    func errorResponse(id: JSONRPCID?, code: Int, message: String) -> [String: Any] {
+        var resp: [String: Any] = [
+            "jsonrpc": "2.0",
+            "error": ["code": code, "message": message]
+        ]
+        if let id { resp["id"] = idValue(id) }
+        return resp
+    }
+
+    func idValue(_ id: JSONRPCID) -> Any {
+        switch id {
+        case .int(let i): return i
+        case .string(let s): return s
+        }
+    }
+
+    func write(_ response: [String: Any]) {
+        guard !response.isEmpty else { return }
+        if let data = try? JSONSerialization.data(withJSONObject: response),
+           let str = String(data: data, encoding: .utf8) {
+            print(str)
+            fflush(stdout)
+        }
+    }
+}
+
+// MARK: - JSON Decoder for MCP
+
+extension JSONDecoder {
+    static let mcp: JSONDecoder = {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }()
+}
+
+// MARK: - Entry Point
+
+do {
+    let db = try openDatabase()
+    let server = MCPServer(db: db)
+    server.run()
+} catch {
+    let errMsg = """
+    {"jsonrpc":"2.0","error":{"code":-32603,"message":"\(error.localizedDescription)"},"id":null}
+    """
+    FileHandle.standardError.write(errMsg.data(using: .utf8)!)
+    exit(1)
+}

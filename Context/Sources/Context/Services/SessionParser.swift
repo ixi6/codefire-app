@@ -13,6 +13,10 @@ struct ParsedSession {
     let filesChanged: [String]
     let userMessages: [String]
     let toolNames: [String]
+    let inputTokens: Int
+    let outputTokens: Int
+    let cacheCreationTokens: Int
+    let cacheReadTokens: Int
 }
 
 /// Parses Claude Code `.jsonl` session files into structured data.
@@ -60,6 +64,10 @@ class SessionParser {
         var filesChanged = Set<String>()
         var userMessages: [String] = []
         var toolNames: [String] = []
+        var inputTokens = 0
+        var outputTokens = 0
+        var cacheCreationTokens = 0
+        var cacheReadTokens = 0
 
         for line in lines {
             guard let lineData = line.data(using: .utf8),
@@ -97,10 +105,19 @@ class SessionParser {
             }
 
             if type == "assistant" {
-                // Extract model from assistant message
-                if let message = json["message"] as? [String: Any],
-                   let m = message["model"] as? String {
+                guard let message = json["message"] as? [String: Any] else { continue }
+
+                // Extract model
+                if let m = message["model"] as? String {
                     model = m
+                }
+
+                // Extract token usage
+                if let usage = message["usage"] as? [String: Any] {
+                    inputTokens         += usage["input_tokens"]                as? Int ?? 0
+                    outputTokens        += usage["output_tokens"]               as? Int ?? 0
+                    cacheCreationTokens += usage["cache_creation_input_tokens"]  as? Int ?? 0
+                    cacheReadTokens     += usage["cache_read_input_tokens"]      as? Int ?? 0
                 }
 
                 // Extract tool use blocks from assistant messages
@@ -126,7 +143,11 @@ class SessionParser {
             toolUseCount: toolUseCount,
             filesChanged: Array(filesChanged).sorted(),
             userMessages: userMessages,
-            toolNames: toolNames
+            toolNames: toolNames,
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            cacheCreationTokens: cacheCreationTokens,
+            cacheReadTokens: cacheReadTokens
         )
     }
 

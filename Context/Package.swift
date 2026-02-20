@@ -17,5 +17,12 @@ let package = Package(
             ],
             path: "Sources/Context"
         ),
+        .executableTarget(
+            name: "ContextMCP",
+            dependencies: [
+                .product(name: "GRDB", package: "GRDB.swift"),
+            ],
+            path: "Sources/ContextMCP"
+        ),
     ]
 )

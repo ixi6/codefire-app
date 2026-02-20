@@ -1,49 +1,100 @@
 import SwiftUI
 
+// MARK: - MCP Connection Monitor
+
+struct MCPConnection: Identifiable {
+    let id: Int // PID
+    let cwd: String
+    let projectId: String?
+    let projectName: String?
+    let connectedAt: String
+}
+
+class MCPConnectionMonitor: ObservableObject {
+    @Published var connections: [MCPConnection] = []
+
+    private var timer: Timer?
+    private let statusDir: URL
+
+    init() {
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first!.appendingPathComponent("Context/mcp-connections", isDirectory: true)
+        statusDir = appSupport
+    }
+
+    func startPolling() {
+        poll()
+        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            self?.poll()
+        }
+    }
+
+    func stopPolling() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func poll() {
+        guard FileManager.default.fileExists(atPath: statusDir.path) else {
+            DispatchQueue.main.async { self.connections = [] }
+            return
+        }
+
+        var active: [MCPConnection] = []
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: statusDir, includingPropertiesForKeys: nil
+        ) else {
+            DispatchQueue.main.async { self.connections = [] }
+            return
+        }
+
+        for file in files where file.pathExtension == "json" {
+            guard let pidStr = file.deletingPathExtension().lastPathComponent.components(separatedBy: ".").first,
+                  let pid = Int(pidStr) else { continue }
+
+            // Check if process is still running
+            if kill(Int32(pid), 0) != 0 {
+                // Process is dead — clean up stale file
+                try? FileManager.default.removeItem(at: file)
+                continue
+            }
+
+            guard let data = try? Data(contentsOf: file),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+
+            active.append(MCPConnection(
+                id: pid,
+                cwd: json["cwd"] as? String ?? "unknown",
+                projectId: json["projectId"] as? String,
+                projectName: json["projectName"] as? String,
+                connectedAt: json["connectedAt"] as? String ?? ""
+            ))
+        }
+
+        DispatchQueue.main.async { self.connections = active }
+    }
+}
+
 struct GUIPanelView: View {
     @EnvironmentObject var appState: AppState
+    @StateObject private var mcpMonitor = MCPConnectionMonitor()
 
     var body: some View {
         VStack(spacing: 0) {
             // Project header
-            HStack {
-                if let project = appState.currentProject {
-                    Image(systemName: "folder.fill")
-                        .foregroundColor(.accentColor)
-                    Text(project.name)
-                        .font(.headline)
-                    Text(project.path)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                } else {
-                    Text("No project selected")
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-                Menu {
-                    ForEach(appState.projects) { project in
-                        Button(project.name) {
-                            appState.selectProject(project)
-                        }
-                    }
-                } label: {
-                    Image(systemName: "chevron.down.circle")
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            projectHeader
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color(nsColor: .windowBackgroundColor).opacity(0.6))
+
+            Divider()
 
             // Tab bar
-            HStack(spacing: 0) {
-                ForEach(AppState.GUITab.allCases, id: \.self) { tab in
-                    TabButton(tab: tab, isSelected: appState.selectedTab == tab) {
-                        appState.selectedTab = tab
-                    }
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 8)
+            tabBar
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
 
             Divider()
 
@@ -59,10 +110,96 @@ struct GUIPanelView: View {
                 case .notes:
                     NoteListView()
                 case .memory:
-                    PatternListView()
+                    MemoryEditorView()
+                case .rules:
+                    ClaudeMdEditorView()
+                case .visualize:
+                    VisualizerView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(Color(nsColor: .underPageBackgroundColor))
+        .onAppear { mcpMonitor.startPolling() }
+        .onDisappear { mcpMonitor.stopPolling() }
+    }
+
+    // MARK: - Project Header
+
+    private var projectHeader: some View {
+        HStack(spacing: 10) {
+            if let project = appState.currentProject {
+                // Project icon
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.accentColor.gradient)
+                    .frame(width: 28, height: 28)
+                    .overlay(
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white)
+                    )
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(project.name)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(project.path)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            } else {
+                Image(systemName: "questionmark.folder")
+                    .font(.system(size: 16))
+                    .foregroundColor(.secondary)
+                Text("No project selected")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            // MCP connection indicator
+            MCPIndicator(connections: mcpMonitor.connections, currentProjectId: appState.currentProject?.id)
+
+            // Project picker
+            Menu {
+                ForEach(appState.projects) { project in
+                    Button {
+                        appState.selectProject(project)
+                    } label: {
+                        Label(project.name, systemImage: "folder")
+                    }
+                }
+            } label: {
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 24, height: 24)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(6)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+        }
+    }
+
+    // MARK: - Tab Bar
+
+    /// Tabs hidden from the tab bar (but code kept for later re-enabling).
+    private static let hiddenTabs: Set<AppState.GUITab> = [.visualize]
+
+    private var tabBar: some View {
+        HStack(spacing: 2) {
+            ForEach(AppState.GUITab.allCases.filter { !Self.hiddenTabs.contains($0) }, id: \.self) { tab in
+                TabButton(tab: tab, isSelected: appState.selectedTab == tab) {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        appState.selectedTab = tab
+                    }
+                }
+            }
+            Spacer()
         }
     }
 }
@@ -72,20 +209,120 @@ struct TabButton: View {
     let isSelected: Bool
     let action: () -> Void
 
+    @State private var isHovering = false
+
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 Image(systemName: tab.icon)
-                    .font(.system(size: 12))
+                    .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
                 Text(tab.rawValue)
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isSelected
+                          ? Color.accentColor.opacity(0.15)
+                          : isHovering ? Color(nsColor: .controlBackgroundColor) : Color.clear)
+            )
             .foregroundColor(isSelected ? .accentColor : .secondary)
-            .cornerRadius(6)
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovering = hovering
+        }
+    }
+}
+
+// MARK: - MCP Connection Indicator
+
+struct MCPIndicator: View {
+    let connections: [MCPConnection]
+    let currentProjectId: String?
+
+    /// Connections matching the currently selected project.
+    private var projectConnections: [MCPConnection] {
+        guard let pid = currentProjectId else { return [] }
+        return connections.filter { $0.projectId == pid }
+    }
+
+    private var isConnectedToCurrentProject: Bool {
+        !projectConnections.isEmpty
+    }
+
+    private var statusColor: Color {
+        isConnectedToCurrentProject ? .green : .orange
+    }
+
+    var body: some View {
+        if connections.isEmpty {
+            // No MCP connections — show disconnected state
+            HStack(spacing: 5) {
+                Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary.opacity(0.5))
+                Text("MCP")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary.opacity(0.5))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+            )
+        } else {
+            Menu {
+                Section("MCP Connections (\(connections.count))") {
+                    ForEach(connections) { conn in
+                        let isCurrent = conn.projectId == currentProjectId
+                        Label {
+                            Text("\(conn.projectName ?? "Unknown") — PID \(conn.id)")
+                        } icon: {
+                            Image(systemName: isCurrent ? "checkmark.circle.fill" : "circle")
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(statusColor)
+                    Text("MCP")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(statusColor)
+                    if connections.count > 1 {
+                        Text("\(connections.count)")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .frame(width: 16, height: 16)
+                            .background(Circle().fill(statusColor))
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(statusColor.opacity(0.12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 5)
+                                .strokeBorder(statusColor.opacity(0.3), lineWidth: 1)
+                        )
+                )
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+        }
+    }
+
+    private func shortenPath(_ path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if path.hasPrefix(home) {
+            return "~" + path.dropFirst(home.count)
+        }
+        return path
     }
 }

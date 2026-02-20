@@ -2,44 +2,174 @@ import SwiftUI
 import SwiftTerm
 import AppKit
 
-/// Wraps SwiftTerm's `LocalProcessTerminalView` (an NSView) for use in SwiftUI.
-///
-/// The wrapper starts a shell process in `initialDirectory` and supports sending
-/// commands programmatically through the `sendCommand` binding. When a non-nil
-/// value is written, the text plus a newline is fed to the terminal and the
-/// binding is reset to nil.
+// MARK: - Focusable Terminal Subclass
+
+/// Subclass that claims keyboard focus via AppKit lifecycle hooks,
+/// adds file drag-and-drop (inserts path as text), and Cmd+V image paste.
+final class FocusableTerminalView: LocalProcessTerminalView {
+
+    // MARK: - Lifecycle
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window else { return }
+
+        // Register for file drag-and-drop (matches Terminal.app / iTerm2)
+        registerForDraggedTypes([.fileURL])
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            window.makeFirstResponder(self)
+        }
+    }
+
+    // MARK: - Safe Layout Guards
+
+    override func getWindowSize() -> winsize {
+        let f = self.frame
+        let w = max(1, min(f.width, 65535))
+        let h = max(1, min(f.height, 65535))
+        let cols = max(1, min(terminal.cols, Int(UInt16.max)))
+        let rows = max(1, min(terminal.rows, Int(UInt16.max)))
+        return winsize(
+            ws_row: UInt16(rows),
+            ws_col: UInt16(cols),
+            ws_xpixel: UInt16(w),
+            ws_ypixel: UInt16(h)
+        )
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        guard newSize.width > 0 && newSize.height > 0 else { return }
+        super.setFrameSize(newSize)
+    }
+
+    // MARK: - File Drag-and-Drop (NSDraggingDestination)
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        if sender.draggingPasteboard.canReadObject(forClasses: [NSURL.self], options: nil) {
+            return .copy
+        }
+        return []
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        guard let urls = sender.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL] else {
+            return false
+        }
+
+        // Insert each file path as text, space-separated (matches Terminal.app)
+        let paths = urls.map { escapedPath($0.path) }
+        let text = paths.joined(separator: " ")
+        send(txt: text)
+        return true
+    }
+
+    /// Shell-escape a file path (wrap in single quotes, escape inner quotes).
+    private func escapedPath(_ path: String) -> String {
+        if path.rangeOfCharacter(from: .init(charactersIn: " '\"\\()&|;<>$!#")) != nil {
+            let escaped = path.replacingOccurrences(of: "'", with: "'\\''")
+            return "'\(escaped)'"
+        }
+        return path
+    }
+
+    // MARK: - Cmd+V Image Paste
+
+    override func paste(_ sender: Any) {
+        let pb = NSPasteboard.general
+
+        // Check for image data on the clipboard (e.g. screenshots via Cmd+Shift+4)
+        if let imgData = pb.data(forType: .tiff) ?? pb.data(forType: .png) {
+            if let path = saveClipboardImage(imgData) {
+                send(txt: escapedPath(path))
+                return
+            }
+        }
+
+        // Fall through to normal text paste
+        super.paste(sender)
+    }
+
+    /// Save clipboard image data to a temp file and return the path.
+    private func saveClipboardImage(_ data: Data) -> String? {
+        // Convert TIFF to PNG for smaller file and broader compatibility
+        guard let rep = NSBitmapImageRep(data: data),
+              let pngData = rep.representation(using: .png, properties: [:]) else {
+            return nil
+        }
+
+        let fileName = "clipboard-\(Int(Date().timeIntervalSince1970)).png"
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("context-paste", isDirectory: true)
+
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+        let fileURL = tempDir.appendingPathComponent(fileName)
+        do {
+            try pngData.write(to: fileURL)
+            return fileURL.path
+        } catch {
+            return nil
+        }
+    }
+}
+
+// MARK: - SwiftUI Wrapper
+
 struct TerminalWrapper: NSViewRepresentable {
-    typealias NSViewType = LocalProcessTerminalView
+    typealias NSViewType = FocusableTerminalView
 
     let initialDirectory: String
+    let initialCommand: String?
     @Binding var sendCommand: String?
 
     // MARK: - Coordinator
 
     class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
         var parent: TerminalWrapper
-        var terminalView: LocalProcessTerminalView?
+        weak var terminalView: FocusableTerminalView?
+        var mouseMonitor: Any?
 
         init(_ parent: TerminalWrapper) {
             self.parent = parent
         }
 
+        deinit {
+            if let monitor = mouseMonitor {
+                NSEvent.removeMonitor(monitor)
+            }
+        }
+
         // MARK: LocalProcessTerminalViewDelegate
 
-        func processTerminated(source: TerminalView, exitCode: Int32?) {
-            // Could notify the parent or restart; for now do nothing.
-        }
+        func processTerminated(source: TerminalView, exitCode: Int32?) {}
+        func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
+        func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
+        func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
-        func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {
-            // No-op: the terminal handles resize internally.
-        }
+        // MARK: Focus monitor
 
-        func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
-            // Could propagate to the tab title in the future.
-        }
-
-        func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {
-            // Could track the working directory; no-op for now.
+        /// Re-claim focus when clicking the terminal after SwiftUI
+        /// steals it (e.g. user clicked a GUI button then clicks back).
+        func installClickFocusMonitor(for terminal: NSView) {
+            mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak terminal] event in
+                guard let terminal = terminal,
+                      let window = terminal.window,
+                      event.window === window else {
+                    return event
+                }
+                let location = terminal.convert(event.locationInWindow, from: nil)
+                if terminal.bounds.contains(location) {
+                    DispatchQueue.main.async {
+                        window.makeFirstResponder(terminal)
+                    }
+                }
+                return event
+            }
         }
 
         // MARK: Shell management
@@ -47,12 +177,21 @@ struct TerminalWrapper: NSViewRepresentable {
         func startShell(in directory: String?) {
             guard let terminalView else { return }
             let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+
+            var env = ProcessInfo.processInfo.environment
+            env["TERM"] = "xterm-256color"
+            env["COLORTERM"] = "truecolor"
+            let envStrings = env.map { "\($0.key)=\($0.value)" }
+
+            // Use "-zsh" as execName for proper login shell convention.
+            let execName = "-" + URL(fileURLWithPath: shell).lastPathComponent
+
             terminalView.startProcess(
                 executable: shell,
-                args: [shell, "--login"],
-                environment: nil,
-                execName: nil,
-                currentDirectory: directory
+                args: [],
+                environment: envStrings,
+                execName: execName,
+                currentDirectory: directory?.isEmpty == false ? directory : nil
             )
         }
 
@@ -67,20 +206,30 @@ struct TerminalWrapper: NSViewRepresentable {
         Coordinator(self)
     }
 
-    func makeNSView(context: NSViewRepresentableContext<TerminalWrapper>) -> LocalProcessTerminalView {
-        let terminal = LocalProcessTerminalView(frame: .zero)
+    func makeNSView(context: NSViewRepresentableContext<TerminalWrapper>) -> FocusableTerminalView {
+        let terminal = FocusableTerminalView(frame: .zero)
         terminal.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         terminal.processDelegate = context.coordinator
         context.coordinator.terminalView = terminal
 
         context.coordinator.startShell(in: initialDirectory)
+        context.coordinator.installClickFocusMonitor(for: terminal)
+
+        // Send initial command after shell has time to initialize
+        if let command = initialCommand, !command.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                context.coordinator.sendText(command + "\n")
+            }
+        }
+
         return terminal
     }
 
-    func updateNSView(_ nsView: LocalProcessTerminalView, context: NSViewRepresentableContext<TerminalWrapper>) {
+    /// IMPORTANT: Do NOT call makeFirstResponder here — this is called on
+    /// every SwiftUI state update and would cause a focus reset loop.
+    func updateNSView(_ nsView: FocusableTerminalView, context: NSViewRepresentableContext<TerminalWrapper>) {
         if let command = sendCommand {
             context.coordinator.sendText(command + "\n")
-            // Reset on the next run-loop tick to avoid modifying state during view update.
             DispatchQueue.main.async {
                 sendCommand = nil
             }

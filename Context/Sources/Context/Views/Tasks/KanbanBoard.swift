@@ -1,5 +1,6 @@
 import SwiftUI
 import GRDB
+import UniformTypeIdentifiers
 
 struct KanbanBoard: View {
     @EnvironmentObject var appState: AppState
@@ -7,66 +8,131 @@ struct KanbanBoard: View {
     @State private var inProgressTasks: [TaskItem] = []
     @State private var doneTasks: [TaskItem] = []
     @State private var showingNewTask = false
+    @State private var selectedTask: TaskItem?
 
     var body: some View {
         VStack(spacing: 0) {
             // Toolbar
             HStack {
                 Text("Task Board")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
+
                 Spacer()
+
+                // Task counts
+                HStack(spacing: 8) {
+                    Label("\(todoTasks.count + inProgressTasks.count) open", systemImage: "circle.dotted")
+                    Label("\(doneTasks.count) done", systemImage: "checkmark.circle")
+                }
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+
                 Button {
                     showingNewTask = true
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "plus")
-                            .font(.system(size: 11))
+                            .font(.system(size: 10, weight: .semibold))
                         Text("New Task")
-                            .font(.system(size: 12))
+                            .font(.system(size: 11, weight: .medium))
                     }
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 5)
                     .background(Color.accentColor.opacity(0.15))
                     .foregroundColor(.accentColor)
-                    .cornerRadius(5)
+                    .cornerRadius(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.accentColor.opacity(0.2), lineWidth: 0.5)
+                    )
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
 
             Divider()
 
-            // Three-column Kanban
-            HStack(alignment: .top, spacing: 8) {
+            // Three-column Kanban with drag-and-drop
+            HStack(alignment: .top, spacing: 10) {
                 KanbanColumn(
                     title: "Todo",
+                    icon: "circle",
                     color: .orange,
+                    status: "todo",
                     tasks: todoTasks,
-                    onMoveForward: { task in moveTask(task, to: "in_progress") }
+                    onTapTask: { openDetail($0) },
+                    onDropTask: { taskId in moveTaskById(taskId, to: "todo") },
+                    contextMenuItems: { task in
+                        Button("Move to In Progress") { moveTask(task, to: "in_progress") }
+                        Button("Launch as Claude Session") { launchTask(task) }
+                        Divider()
+                        Button("Delete", role: .destructive) { deleteTask(task) }
+                    }
                 )
                 KanbanColumn(
                     title: "In Progress",
+                    icon: "circle.lefthalf.filled",
                     color: .blue,
+                    status: "in_progress",
                     tasks: inProgressTasks,
-                    onMoveForward: { task in moveTask(task, to: "done") }
+                    onTapTask: { openDetail($0) },
+                    onDropTask: { taskId in moveTaskById(taskId, to: "in_progress") },
+                    contextMenuItems: { task in
+                        Button("Move to Done") { moveTask(task, to: "done") }
+                        Button("Move back to Todo") { moveTask(task, to: "todo") }
+                        Button("Launch as Claude Session") { launchTask(task) }
+                        Divider()
+                        Button("Delete", role: .destructive) { deleteTask(task) }
+                    }
                 )
                 KanbanColumn(
                     title: "Done",
+                    icon: "checkmark.circle.fill",
                     color: .green,
+                    status: "done",
                     tasks: doneTasks,
-                    onMoveForward: nil
+                    onTapTask: { openDetail($0) },
+                    onDropTask: { taskId in moveTaskById(taskId, to: "done") },
+                    contextMenuItems: { task in
+                        Button("Move back to In Progress") { moveTask(task, to: "in_progress") }
+                        Divider()
+                        Button("Delete", role: .destructive) { deleteTask(task) }
+                    }
                 )
             }
-            .padding(8)
+            .padding(12)
         }
         .sheet(isPresented: $showingNewTask) {
-            NewTaskSheet(isPresented: $showingNewTask, onCreate: { title in
-                createTask(title: title)
+            NewTaskSheet(isPresented: $showingNewTask, onCreate: { task in
+                createTask(task)
             })
+        }
+        .sheet(item: $selectedTask) { task in
+            TaskDetailView(
+                task: task,
+                onSave: { updated in
+                    saveTask(updated)
+                },
+                onDelete: { task in
+                    deleteTask(task)
+                },
+                onDismiss: {
+                    selectedTask = nil
+                }
+            )
         }
         .onAppear { loadTasks() }
         .onChange(of: appState.currentProject) { _, _ in loadTasks() }
+        .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
+            loadTasks()
+        }
+    }
+
+    // MARK: - Actions
+
+    private func openDetail(_ task: TaskItem) {
+        selectedTask = task
     }
 
     private func loadTasks() {
@@ -94,115 +160,270 @@ struct KanbanBoard: View {
     }
 
     private func moveTask(_ task: TaskItem, to newStatus: String) {
-        guard var updated = task as TaskItem? else { return }
+        var updated = task
         updated.status = newStatus
         if newStatus == "done" {
             updated.completedAt = Date()
+        } else {
+            updated.completedAt = nil
         }
-
-        do {
-            try DatabaseService.shared.dbQueue.write { db in
-                try updated.update(db)
-            }
-            loadTasks()
-        } catch {
-            print("KanbanBoard: failed to move task: \(error)")
-        }
+        saveTask(updated)
     }
 
-    private func createTask(title: String) {
-        guard let project = appState.currentProject else { return }
+    private func moveTaskById(_ taskId: Int64, to newStatus: String) {
+        let allTasks = todoTasks + inProgressTasks + doneTasks
+        guard let task = allTasks.first(where: { $0.id == taskId }) else { return }
+        moveTask(task, to: newStatus)
+    }
 
-        var task = TaskItem(
-            id: nil,
-            projectId: project.id,
-            title: title,
-            description: nil,
-            status: "todo",
-            priority: 0,
-            sourceSession: nil,
-            source: "manual",
-            createdAt: Date(),
-            completedAt: nil
-        )
-
+    private func createTask(_ task: TaskItem) {
+        var newTask = task
         do {
             try DatabaseService.shared.dbQueue.write { db in
-                try task.insert(db)
+                try newTask.insert(db)
             }
             loadTasks()
         } catch {
             print("KanbanBoard: failed to create task: \(error)")
         }
     }
+
+    private func saveTask(_ task: TaskItem) {
+        do {
+            try DatabaseService.shared.dbQueue.write { db in
+                try task.update(db)
+            }
+            loadTasks()
+        } catch {
+            print("KanbanBoard: failed to save task: \(error)")
+        }
+    }
+
+    private func deleteTask(_ task: TaskItem) {
+        do {
+            _ = try DatabaseService.shared.dbQueue.write { db in
+                try task.delete(db)
+            }
+            loadTasks()
+        } catch {
+            print("KanbanBoard: failed to delete task: \(error)")
+        }
+    }
+
+    private func launchTask(_ task: TaskItem) {
+        var prompt = task.title
+        if let desc = task.description, !desc.isEmpty {
+            prompt += "\n\n" + desc
+        }
+        let images = task.attachmentsArray
+        if !images.isEmpty {
+            prompt += "\n\nAttached images:"
+            for path in images {
+                prompt += "\n- \(path)"
+            }
+        }
+        let escaped = prompt.replacingOccurrences(of: "\"", with: "\\\"")
+        NotificationCenter.default.post(
+            name: .launchTask,
+            object: nil,
+            userInfo: ["title": "Task: \(task.title)", "command": "claude \"\(escaped)\""]
+        )
+    }
 }
 
-// MARK: - Kanban Column
+// MARK: - Kanban Column (with drop target)
 
-struct KanbanColumn: View {
+struct KanbanColumn<MenuContent: View>: View {
     let title: String
+    let icon: String
     let color: Color
+    let status: String
     let tasks: [TaskItem]
-    let onMoveForward: ((TaskItem) -> Void)?
+    let onTapTask: (TaskItem) -> Void
+    let onDropTask: (Int64) -> Void
+    @ViewBuilder let contextMenuItems: (TaskItem) -> MenuContent
+
+    @State private var isDropTargeted = false
 
     var body: some View {
         VStack(spacing: 0) {
             // Header
             HStack(spacing: 6) {
-                Circle()
-                    .fill(color)
-                    .frame(width: 8, height: 8)
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(color)
                 Text(title)
                     .font(.system(size: 12, weight: .semibold))
-                Text("\(tasks.count)")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
                 Spacer()
+                Text("\(tasks.count)")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(
+                        Capsule()
+                            .fill(Color(nsColor: .separatorColor).opacity(0.15))
+                    )
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
 
-            Divider()
+            // Thin colored accent bar
+            Rectangle()
+                .fill(color.opacity(0.4))
+                .frame(height: 1.5)
 
-            // Task list
+            // Task list (drop target)
             ScrollView {
-                LazyVStack(spacing: 6) {
-                    ForEach(tasks) { task in
-                        if let moveAction = onMoveForward {
-                            TaskCardView(task: task)
-                                .contextMenu {
-                                    Button("Move Forward") {
-                                        moveAction(task)
-                                    }
-                                }
-                        } else {
-                            TaskCardView(task: task)
+                if tasks.isEmpty {
+                    Text("No tasks")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 20)
+                } else {
+                    LazyVStack(spacing: 6) {
+                        ForEach(tasks) { task in
+                            TaskCardView(task: task) {
+                                onTapTask(task)
+                            }
+                            .onDrag {
+                                NSItemProvider(object: "\(task.id ?? 0)" as NSString)
+                            }
+                            .contextMenu {
+                                contextMenuItems(task)
+                            }
                         }
                     }
+                    .padding(8)
                 }
-                .padding(6)
+            }
+            .frame(maxHeight: .infinity)
+            .onDrop(of: [.plainText], isTargeted: $isDropTargeted) { providers in
+                guard let provider = providers.first else { return false }
+                provider.loadObject(ofClass: NSString.self) { item, _ in
+                    guard let idString = item as? String,
+                          let taskId = Int64(idString) else { return }
+                    DispatchQueue.main.async {
+                        onDropTask(taskId)
+                    }
+                }
+                return true
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
-        .cornerRadius(8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isDropTargeted
+                      ? color.opacity(0.08)
+                      : Color(nsColor: .controlBackgroundColor).opacity(0.4))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isDropTargeted
+                        ? color.opacity(0.4)
+                        : Color(nsColor: .separatorColor).opacity(0.25),
+                        lineWidth: isDropTargeted ? 1.5 : 0.5)
+        )
+        .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
     }
 }
 
-// MARK: - New Task Sheet
+// MARK: - New Task Sheet (Rich)
 
 struct NewTaskSheet: View {
     @Binding var isPresented: Bool
-    let onCreate: (String) -> Void
+    let onCreate: (TaskItem) -> Void
+
+    @EnvironmentObject var appState: AppState
+
     @State private var title: String = ""
+    @State private var description: String = ""
+    @State private var priority: Int = 0
+    @State private var selectedLabels: Set<String> = []
 
     var body: some View {
         VStack(spacing: 16) {
             Text("New Task")
-                .font(.headline)
+                .font(.system(size: 15, weight: .semibold))
 
-            TextField("Task title", text: $title)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 300)
+            VStack(alignment: .leading, spacing: 10) {
+                TextField("Task title", text: $title)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 13))
+
+                // Description
+                TextEditor(text: $description)
+                    .font(.system(size: 12))
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .frame(height: 80)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
+                    )
+
+                // Priority
+                HStack(spacing: 4) {
+                    Text("Priority:")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                    ForEach(TaskItem.Priority.allCases, id: \.rawValue) { level in
+                        Button {
+                            priority = level.rawValue
+                        } label: {
+                            Text(level.label)
+                                .font(.system(size: 10, weight: .medium))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule()
+                                        .fill(priority == level.rawValue
+                                              ? level.color.opacity(0.15)
+                                              : Color.clear)
+                                )
+                                .foregroundColor(priority == level.rawValue ? level.color : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                // Labels
+                HStack(spacing: 4) {
+                    Text("Labels:")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                    ForEach(TaskItem.predefinedLabels.prefix(6), id: \.self) { label in
+                        Button {
+                            if selectedLabels.contains(label) {
+                                selectedLabels.remove(label)
+                            } else {
+                                selectedLabels.insert(label)
+                            }
+                        } label: {
+                            Text(label)
+                                .font(.system(size: 9, weight: .semibold))
+                                .textCase(.uppercase)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule()
+                                        .fill(selectedLabels.contains(label)
+                                              ? TaskItem.labelColor(for: label).opacity(0.15)
+                                              : Color(nsColor: .separatorColor).opacity(0.1))
+                                )
+                                .foregroundColor(selectedLabels.contains(label)
+                                                 ? TaskItem.labelColor(for: label)
+                                                 : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(width: 400)
 
             HStack(spacing: 12) {
                 Button("Cancel") {
@@ -212,7 +433,22 @@ struct NewTaskSheet: View {
 
                 Button("Create") {
                     if !title.trimmingCharacters(in: .whitespaces).isEmpty {
-                        onCreate(title.trimmingCharacters(in: .whitespaces))
+                        var task = TaskItem(
+                            id: nil,
+                            projectId: appState.currentProject?.id ?? "",
+                            title: title.trimmingCharacters(in: .whitespaces),
+                            description: description.isEmpty ? nil : description,
+                            status: "todo",
+                            priority: priority,
+                            sourceSession: nil,
+                            source: "manual",
+                            createdAt: Date(),
+                            completedAt: nil,
+                            labels: nil,
+                            attachments: nil
+                        )
+                        task.setLabels(Array(selectedLabels).sorted())
+                        onCreate(task)
                         isPresented = false
                     }
                 }

@@ -12,23 +12,31 @@ struct SessionListView: View {
             // Left panel: search + session list
             VStack(spacing: 0) {
                 // Search bar
-                HStack {
+                HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
                     TextField("Search sessions...", text: $searchText)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 13))
+                        .font(.system(size: 12))
                 }
-                .padding(8)
-                .background(Color(nsColor: .controlBackgroundColor))
-                .cornerRadius(6)
-                .padding(8)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7)
+                        .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
+                )
+                .padding(10)
 
                 Divider()
 
                 // Session list
                 ScrollView {
-                    LazyVStack(spacing: 1) {
+                    LazyVStack(spacing: 2) {
                         ForEach(sessions) { session in
                             SessionRow(session: session, isSelected: selectedSession?.id == session.id)
                                 .onTapGesture {
@@ -37,6 +45,7 @@ struct SessionListView: View {
                         }
                     }
                     .padding(.vertical, 4)
+                    .padding(.horizontal, 4)
                 }
             }
             .frame(minWidth: 220, idealWidth: 280)
@@ -46,13 +55,16 @@ struct SessionListView: View {
                 SessionDetailView(session: session)
                     .frame(minWidth: 300)
             } else {
-                VStack {
+                VStack(spacing: 10) {
                     Image(systemName: "clock")
-                        .font(.system(size: 32))
-                        .foregroundColor(.secondary.opacity(0.5))
+                        .font(.system(size: 28))
+                        .foregroundStyle(.tertiary)
                     Text("Select a session")
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.secondary)
-                        .font(.system(size: 14))
+                    Text("Choose from the list to view details")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -63,6 +75,9 @@ struct SessionListView: View {
             loadSessions()
         }
         .onChange(of: searchText) { _, _ in loadSessions() }
+        .onReceive(NotificationCenter.default.publisher(for: .sessionsDidChange)) { _ in
+            loadSessions()
+        }
     }
 
     private func loadSessions() {
@@ -95,6 +110,7 @@ struct SessionListView: View {
 struct SessionRow: View {
     let session: Session
     let isSelected: Bool
+    @State private var isHovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -106,7 +122,7 @@ struct SessionRow: View {
                 if let date = session.startedAt {
                     Text(date.formatted(.dateTime.month(.abbreviated).day()))
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.tertiary)
                 }
             }
 
@@ -117,18 +133,30 @@ struct SessionRow: View {
                 Label("\(session.toolUseCount)", systemImage: "wrench")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
+                if session.estimatedCost > 0 {
+                    Label(String(format: "$%.2f", session.estimatedCost), systemImage: "dollarsign.circle")
+                        .font(.system(size: 10))
+                        .foregroundColor(session.estimatedCost > 1 ? .orange : .green)
+                }
                 if let branch = session.gitBranch {
                     Label(branch, systemImage: "arrow.triangle.branch")
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.purple.opacity(0.7))
                         .lineLimit(1)
                 }
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
-        .cornerRadius(4)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected
+                      ? Color.accentColor.opacity(0.15)
+                      : isHovering ? Color(nsColor: .controlBackgroundColor).opacity(0.5) : Color.clear)
+        )
         .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovering = hovering
+        }
     }
 }
