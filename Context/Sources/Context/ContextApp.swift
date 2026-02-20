@@ -2,6 +2,14 @@ import SwiftUI
 
 @main
 struct ContextApp: App {
+    init() {
+        do {
+            try DatabaseService.shared.setup()
+        } catch {
+            fatalError("Database setup failed: \(error)")
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
