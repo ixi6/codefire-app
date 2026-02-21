@@ -17,7 +17,14 @@ final class TerminalTracker {
 
     func terminateAll() {
         for (_, ref) in terminals {
-            ref.view?.process.terminate()
+            if let process = ref.view?.process {
+                // Send SIGHUP first (shells respond to this), then SIGKILL as fallback
+                let pid = process.shellPid
+                if pid > 0 {
+                    kill(pid, SIGHUP)
+                    kill(pid, SIGKILL)
+                }
+            }
         }
         terminals.removeAll()
     }
@@ -28,6 +35,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         TerminalTracker.shared.terminateAll()
         return .terminateNow
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Belt-and-suspenders: kill any remaining child processes
+        TerminalTracker.shared.terminateAll()
     }
 }
 

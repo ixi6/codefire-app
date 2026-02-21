@@ -166,32 +166,109 @@ class AgentMonitor: ObservableObject {
     }
 
     private func fetchProcesses() -> [ProcRecord] {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/ps")
-        task.arguments = ["-eo", "pid,ppid,etime,command"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-        do { try task.run() } catch { return [] }
-        task.waitUntilExit()
+        // Use sysctl to read the process table directly — no child process spawning.
+        // This avoids the zombie process accumulation that Process()/ps caused.
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL]
+        var size: Int = 0
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8) else { return [] }
-
-        var records: [ProcRecord] = []
-        for line in output.split(separator: "\n").dropFirst() {
-            let cols = line.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: true)
-            guard cols.count >= 4,
-                  let pid = Int(cols[0]),
-                  let ppid = Int(cols[1]) else { continue }
-            records.append(ProcRecord(
-                pid: pid,
-                ppid: ppid,
-                etime: String(cols[2]),
-                command: String(cols[3])
-            ))
+        // First call: get buffer size
+        guard sysctl(&mib, UInt32(mib.count), nil, &size, nil, 0) == 0, size > 0 else {
+            return []
         }
+
+        let count = size / MemoryLayout<kinfo_proc>.stride
+        var procs = [kinfo_proc](repeating: kinfo_proc(), count: count)
+
+        // Second call: fill buffer
+        guard sysctl(&mib, UInt32(mib.count), &procs, &size, nil, 0) == 0 else {
+            return []
+        }
+
+        let actualCount = size / MemoryLayout<kinfo_proc>.stride
+        let now = Date()
+        var records: [ProcRecord] = []
+
+        for i in 0..<actualCount {
+            let info = procs[i]
+            let pid = Int(info.kp_proc.p_pid)
+            let ppid = Int(info.kp_eproc.e_ppid)
+
+            // Calculate elapsed time from start time
+            let startSec = info.kp_proc.p_starttime.tv_sec
+            let startDate = Date(timeIntervalSince1970: TimeInterval(startSec))
+            let elapsed = Int(now.timeIntervalSince(startDate))
+            let etime = formatEtime(elapsed)
+
+            // p_comm is only 16 chars (e.g. "node"). For node processes that might
+            // be Claude Code, we need the full command-line args via KERN_PROCARGS2
+            // to check for "@anthropic", "claude-code", etc.
+            let comm = withUnsafePointer(to: info.kp_proc.p_comm) { ptr in
+                ptr.withMemoryRebound(to: CChar.self, capacity: 16) { cStr in
+                    String(cString: cStr)
+                }
+            }
+
+            // Only fetch full args for "node" processes (Claude Code runs as node)
+            let fullCommand: String
+            if comm == "node" {
+                fullCommand = Self.getProcessArgs(pid: Int32(pid)) ?? comm
+            } else {
+                fullCommand = comm
+            }
+
+            records.append(ProcRecord(pid: pid, ppid: ppid, etime: etime, command: fullCommand))
+        }
+
         return records
+    }
+
+    /// Read the full command-line arguments for a process using KERN_PROCARGS2.
+    /// Returns the executable path + args joined by spaces, or nil on failure.
+    private static func getProcessArgs(pid: Int32) -> String? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size: Int = 0
+
+        // Get buffer size
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 0 else { return nil }
+
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return nil }
+
+        // KERN_PROCARGS2 layout: [argc: Int32] [exec_path\0] [padding\0...] [arg0\0] [arg1\0] ...
+        guard size > MemoryLayout<Int32>.size else { return nil }
+
+        let argc = buffer.withUnsafeBytes { $0.load(as: Int32.self) }
+        var offset = MemoryLayout<Int32>.size
+
+        // Skip the exec_path (null-terminated string)
+        while offset < size && buffer[offset] != 0 { offset += 1 }
+        // Skip trailing nulls after exec_path
+        while offset < size && buffer[offset] == 0 { offset += 1 }
+
+        // Read argc arguments
+        var args: [String] = []
+        for _ in 0..<argc {
+            guard offset < size else { break }
+            let start = offset
+            while offset < size && buffer[offset] != 0 { offset += 1 }
+            if let arg = String(bytes: buffer[start..<offset], encoding: .utf8) {
+                args.append(arg)
+            }
+            offset += 1 // skip null terminator
+        }
+
+        return args.joined(separator: " ")
+    }
+
+    /// Format seconds into ps-style etime string.
+    private func formatEtime(_ totalSeconds: Int) -> String {
+        let s = max(0, totalSeconds)
+        let m = s / 60
+        let h = m / 60
+        if h > 0 {
+            return "\(h):\(String(format: "%02d", m % 60)):\(String(format: "%02d", s % 60))"
+        }
+        return "\(m):\(String(format: "%02d", s % 60))"
     }
 
     private func isClaude(_ command: String) -> Bool {
