@@ -10,6 +10,7 @@ struct TaskDetailView: View {
     var onDismiss: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var appState: AppState
     @EnvironmentObject var claudeService: ClaudeService
 
     @State private var title: String = ""
@@ -17,6 +18,7 @@ struct TaskDetailView: View {
     @State private var priority: Int = 0
     @State private var selectedLabels: Set<String> = []
     @State private var customLabel: String = ""
+    @State private var selectedProjectId: String = "__global__"
     @State private var enrichError: String?
     @State private var attachedImages: [String] = []
     @State private var isDropTargeted = false
@@ -162,6 +164,26 @@ struct TaskDetailView: View {
                                 }
                                 .buttonStyle(.plain)
                             }
+                        }
+                    }
+
+                    // Project assignment (global tasks only)
+                    if task.isGlobal {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Project")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.secondary)
+
+                            Picker("Project", selection: $selectedProjectId) {
+                                Text("None (Global only)")
+                                    .tag("__global__")
+                                ForEach(appState.projects) { project in
+                                    Text(project.name)
+                                        .tag(project.id)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
                         }
                     }
 
@@ -552,6 +574,7 @@ struct TaskDetailView: View {
             title = task.title
             description = task.description ?? ""
             priority = task.priority
+            selectedProjectId = task.projectId
             selectedLabels = Set(task.labelsArray)
             attachedImages = task.attachmentsArray
             loadNotes()
@@ -566,6 +589,7 @@ struct TaskDetailView: View {
         updated.title = title.trimmingCharacters(in: .whitespaces)
         updated.description = description.isEmpty ? nil : description
         updated.priority = priority
+        updated.projectId = selectedProjectId
         updated.setLabels(Array(selectedLabels).sorted())
         updated.setAttachments(attachedImages)
         onSave(updated)

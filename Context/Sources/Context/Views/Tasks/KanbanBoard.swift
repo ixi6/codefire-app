@@ -64,6 +64,8 @@ struct KanbanBoard: View {
                     tasks: todoTasks,
                     onTapTask: { openDetail($0) },
                     onDropTask: { taskId in moveTaskById(taskId, to: "todo") },
+                    projectLookup: globalMode ? projectLookup : [:],
+                    onProjectBadgeTap: globalMode ? { navigateToProject($0) } : nil,
                     contextMenuItems: { task in
                         Button("Move to In Progress") { moveTask(task, to: "in_progress") }
                         Button("Launch as Claude Session") { launchTask(task) }
@@ -79,6 +81,8 @@ struct KanbanBoard: View {
                     tasks: inProgressTasks,
                     onTapTask: { openDetail($0) },
                     onDropTask: { taskId in moveTaskById(taskId, to: "in_progress") },
+                    projectLookup: globalMode ? projectLookup : [:],
+                    onProjectBadgeTap: globalMode ? { navigateToProject($0) } : nil,
                     contextMenuItems: { task in
                         Button("Move to Done") { moveTask(task, to: "done") }
                         Button("Move back to Todo") { moveTask(task, to: "todo") }
@@ -95,6 +99,8 @@ struct KanbanBoard: View {
                     tasks: doneTasks,
                     onTapTask: { openDetail($0) },
                     onDropTask: { taskId in moveTaskById(taskId, to: "done") },
+                    projectLookup: globalMode ? projectLookup : [:],
+                    onProjectBadgeTap: globalMode ? { navigateToProject($0) } : nil,
                     contextMenuItems: { task in
                         Button("Move back to In Progress") { moveTask(task, to: "in_progress") }
                         Divider()
@@ -130,6 +136,18 @@ struct KanbanBoard: View {
         }
     }
 
+    // MARK: - Project Lookup (for global mode badges)
+
+    private var projectLookup: [String: String] {
+        Dictionary(uniqueKeysWithValues: appState.projects.map { ($0.id, $0.name) })
+    }
+
+    private func navigateToProject(_ projectId: String) {
+        guard let project = appState.projects.first(where: { $0.id == projectId }) else { return }
+        appState.selectedTab = .tasks
+        appState.selectProject(project)
+    }
+
     // MARK: - Actions
 
     private func openDetail(_ task: TaskItem) {
@@ -154,7 +172,6 @@ struct KanbanBoard: View {
                 allTasks = try DatabaseService.shared.dbQueue.read { db in
                     try TaskItem
                         .filter(Column("projectId") == project.id)
-                        .filter(Column("isGlobal") == false)
                         .order(Column("priority").desc, Column("createdAt").desc)
                         .fetchAll(db)
                 }
@@ -255,6 +272,8 @@ struct KanbanColumn<MenuContent: View>: View {
     let tasks: [TaskItem]
     let onTapTask: (TaskItem) -> Void
     let onDropTask: (Int64) -> Void
+    var projectLookup: [String: String] = [:]
+    var onProjectBadgeTap: ((String) -> Void)? = nil
     @ViewBuilder let contextMenuItems: (TaskItem) -> MenuContent
 
     @State private var isDropTargeted = false
@@ -298,7 +317,11 @@ struct KanbanColumn<MenuContent: View>: View {
                 } else {
                     LazyVStack(spacing: 6) {
                         ForEach(tasks) { task in
-                            TaskCardView(task: task) {
+                            TaskCardView(
+                                task: task,
+                                projectName: task.projectId != "__global__" ? projectLookup[task.projectId] : nil,
+                                onProjectTap: task.projectId != "__global__" ? { onProjectBadgeTap?(task.projectId) } : nil
+                            ) {
                                 onTapTask(task)
                             }
                             .onDrag {

@@ -9,7 +9,7 @@ struct HomeView: View {
             HSplitView {
                 ProjectTaskSummary()
                     .frame(minWidth: 200)
-                NoteListView(globalMode: true)
+                RecentEmailsView()
                     .frame(minWidth: 200)
             }
             .frame(minHeight: 150)
@@ -147,7 +147,7 @@ struct ProjectTaskSummary: View {
                         SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) as inProgressCount
                     FROM taskItems t
                     JOIN projects p ON p.id = t.projectId
-                    WHERE t.status != 'done' AND t.isGlobal = 0
+                    WHERE t.status != 'done' AND t.projectId != '__global__'
                     GROUP BY p.id
                     ORDER BY (todoCount + inProgressCount) DESC, p.name ASC
                     """)

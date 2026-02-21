@@ -2,6 +2,8 @@ import SwiftUI
 
 struct TaskCardView: View {
     let task: TaskItem
+    var projectName: String? = nil
+    var onProjectTap: (() -> Void)? = nil
     var onTap: (() -> Void)? = nil
 
     @State private var isHovering = false
@@ -67,6 +69,28 @@ struct TaskCardView: View {
                             .fill(sourceColor.opacity(0.12))
                     )
                     .foregroundColor(sourceColor)
+
+                if let projectName = projectName {
+                    Button {
+                        onProjectTap?()
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "folder.fill")
+                                .font(.system(size: 8))
+                            Text(projectName)
+                                .font(.system(size: 9, weight: .medium))
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(Color.accentColor.opacity(0.12))
+                        )
+                        .foregroundColor(.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 Spacer()
 
