@@ -17,6 +17,7 @@ class AppState: ObservableObject {
         case notes = "Notes"
         case memory = "Memory"
         case rules = "Rules"
+        case browser = "Browser"
         case visualize = "Visualize"
 
         var icon: String {
@@ -27,6 +28,7 @@ class AppState: ObservableObject {
             case .notes: return "note.text"
             case .memory: return "brain"
             case .rules: return "doc.text.magnifyingglass"
+            case .browser: return "globe"
             case .visualize: return "chart.dots.scatter"
             }
         }
