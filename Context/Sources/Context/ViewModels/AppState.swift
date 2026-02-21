@@ -176,6 +176,23 @@ class AppState: ObservableObject {
         }
     }
 
+    func updateProjectTag(_ project: Project, tag: String?) {
+        do {
+            try DatabaseService.shared.dbQueue.write { db in
+                var updated = project
+                if let tag {
+                    updated.setTags([tag])
+                } else {
+                    updated.setTags([])
+                }
+                try updated.update(db)
+            }
+            loadProjects()
+        } catch {
+            print("Failed to update project tag: \(error)")
+        }
+    }
+
     /// Encode a filesystem path the same way Claude Code does for ~/.claude/projects/
     private func encodePath(_ path: String) -> String {
         var result = ""

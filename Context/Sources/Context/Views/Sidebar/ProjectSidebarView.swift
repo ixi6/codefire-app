@@ -10,6 +10,8 @@ struct ProjectSidebarView: View {
     @State private var newClientName = ""
     @State private var newClientColor = Client.defaultColors[0]
     @State private var expandedClients: Set<String> = [] // client IDs
+    @State private var editingTagProjectId: String? = nil
+    @State private var editingTagText = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -112,12 +114,7 @@ struct ProjectSidebarView: View {
             )
         }
         .onAppear {
-            // Expand all client groups by default
-            for group in appState.projectsByClient {
-                if let client = group.client {
-                    expandedClients.insert(client.id)
-                }
-            }
+            // All client groups start collapsed
         }
     }
 
@@ -215,6 +212,7 @@ struct ProjectSidebarView: View {
         SidebarItem(
             icon: "folder.fill",
             label: project.name,
+            tag: project.tagsArray.first,
             isSelected: isSelected,
             accentColor: .accentColor
         ) {
@@ -222,7 +220,42 @@ struct ProjectSidebarView: View {
         }
         .padding(.leading, 20)
         .padding(.trailing, 8)
+        .popover(isPresented: Binding(
+            get: { editingTagProjectId == project.id },
+            set: { if !$0 { editingTagProjectId = nil } }
+        )) {
+            VStack(spacing: 8) {
+                Text("Project Tag")
+                    .font(.system(size: 12, weight: .semibold))
+                TextField("e.g. main, api, web", text: $editingTagText)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+                    .frame(width: 160)
+                    .onSubmit { saveTag(for: project) }
+                HStack(spacing: 8) {
+                    if !project.tagsArray.isEmpty {
+                        Button("Clear") {
+                            editingTagText = ""
+                            saveTag(for: project)
+                        }
+                        .font(.system(size: 11))
+                    }
+                    Spacer()
+                    Button("Cancel") { editingTagProjectId = nil }
+                        .font(.system(size: 11))
+                        .keyboardShortcut(.cancelAction)
+                    Button("Save") { saveTag(for: project) }
+                        .font(.system(size: 11))
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(12)
+        }
         .contextMenu {
+            Button("Set Tag...") {
+                editingTagText = project.tagsArray.first ?? ""
+                editingTagProjectId = project.id
+            }
             Menu("Set Client") {
                 Button("None") {
                     appState.updateProjectClient(project, clientId: nil)
@@ -243,6 +276,12 @@ struct ProjectSidebarView: View {
             }
         }
     }
+
+    private func saveTag(for project: Project) {
+        let tag = editingTagText.trimmingCharacters(in: .whitespaces)
+        appState.updateProjectTag(project, tag: tag.isEmpty ? nil : tag)
+        editingTagProjectId = nil
+    }
 }
 
 // MARK: - SidebarItem
@@ -250,6 +289,7 @@ struct ProjectSidebarView: View {
 struct SidebarItem: View {
     let icon: String
     let label: String
+    var tag: String? = nil
     let isSelected: Bool
     let accentColor: Color
     let action: () -> Void
@@ -268,15 +308,27 @@ struct SidebarItem: View {
                     .foregroundColor(isSelected ? .primary : .secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                if let tag, !tag.isEmpty {
+                    Text(tag)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(isSelected ? accentColor : .secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(
+                            Capsule()
+                                .fill(isSelected ? accentColor.opacity(0.15) : Color.secondary.opacity(0.12))
+                        )
+                        .lineLimit(1)
+                }
                 Spacer()
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(
-                RoundedRectangle(cornerRadius: 5)
+                RoundedRectangle(cornerRadius: 6)
                     .fill(isSelected
                           ? accentColor.opacity(0.12)
-                          : isHovering ? Color(nsColor: .controlBackgroundColor).opacity(0.5) : Color.clear)
+                          : isHovering ? Color(nsColor: .separatorColor).opacity(0.15) : Color.clear)
             )
             .contentShape(Rectangle())
         }
