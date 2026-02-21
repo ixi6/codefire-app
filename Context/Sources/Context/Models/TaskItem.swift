@@ -16,6 +16,7 @@ struct TaskItem: Codable, Identifiable, FetchableRecord, MutablePersistableRecor
     var completedAt: Date?
     var labels: String? // JSON array
     var attachments: String? // JSON array of file paths
+    var isGlobal: Bool = false
 
     static let databaseTableName = "taskItems"
 

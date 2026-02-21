@@ -10,6 +10,7 @@ struct Note: Codable, Identifiable, FetchableRecord, MutablePersistableRecord {
     var sessionId: String?
     var createdAt: Date
     var updatedAt: Date
+    var isGlobal: Bool = false
 
     static let databaseTableName = "notes"
 

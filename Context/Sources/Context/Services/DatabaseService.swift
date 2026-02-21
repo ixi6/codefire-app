@@ -152,6 +152,33 @@ class DatabaseService {
             }
         }
 
+        migrator.registerMigration("v6_addClients") { db in
+            try db.create(table: "clients") { t in
+                t.primaryKey("id", .text)
+                t.column("name", .text).notNull()
+                t.column("color", .text).notNull().defaults(to: "#3B82F6")
+                t.column("sortOrder", .integer).notNull().defaults(to: 0)
+                t.column("createdAt", .datetime).notNull()
+            }
+        }
+
+        migrator.registerMigration("v7_addProjectClientAndTags") { db in
+            try db.alter(table: "projects") { t in
+                t.add(column: "clientId", .text).references("clients", onDelete: .setNull)
+                t.add(column: "tags", .text)
+                t.add(column: "sortOrder", .integer).defaults(to: 0)
+            }
+        }
+
+        migrator.registerMigration("v8_addGlobalFlags") { db in
+            try db.alter(table: "taskItems") { t in
+                t.add(column: "isGlobal", .boolean).notNull().defaults(to: false)
+            }
+            try db.alter(table: "notes") { t in
+                t.add(column: "isGlobal", .boolean).notNull().defaults(to: false)
+            }
+        }
+
         return migrator
     }
 }
