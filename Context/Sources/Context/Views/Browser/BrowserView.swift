@@ -4,6 +4,7 @@ import WebKit
 struct BrowserView: View {
     @ObservedObject var viewModel: BrowserViewModel
     @State private var urlText: String = ""
+    @FocusState private var isUrlBarFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -57,6 +58,24 @@ struct BrowserView: View {
             DispatchQueue.main.async {
                 syncURLBar()
             }
+        }
+        .background {
+            Group {
+                Button("") { viewModel.newTab() }
+                    .keyboardShortcut("t", modifiers: .command)
+                Button("") {
+                    if let id = viewModel.activeTabId {
+                        viewModel.closeTab(id)
+                    }
+                }
+                    .keyboardShortcut("w", modifiers: .command)
+                Button("") { viewModel.activeTab?.webView.reload() }
+                    .keyboardShortcut("r", modifiers: .command)
+                Button("") { isUrlBarFocused = true }
+                    .keyboardShortcut("l", modifiers: .command)
+            }
+            .frame(width: 0, height: 0)
+            .opacity(0)
         }
     }
 
@@ -123,6 +142,7 @@ struct BrowserView: View {
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 0.5)
                 )
+                .focused($isUrlBarFocused)
                 .onSubmit {
                     let trimmed = urlText.trimmingCharacters(in: .whitespaces)
                     guard !trimmed.isEmpty else { return }
