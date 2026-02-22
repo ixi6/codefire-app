@@ -297,6 +297,47 @@ class DatabaseService {
             }
         }
 
+        migrator.registerMigration("v15_createContextEngine") { db in
+            try db.create(table: "indexedFiles") { t in
+                t.primaryKey("id", .text)
+                t.column("projectId", .text).notNull()
+                t.column("relativePath", .text).notNull()
+                t.column("contentHash", .text).notNull()
+                t.column("language", .text)
+                t.column("lastIndexedAt", .datetime).notNull()
+            }
+            try db.create(index: "indexedFiles_projectId", on: "indexedFiles", columns: ["projectId"])
+            try db.create(index: "indexedFiles_path", on: "indexedFiles", columns: ["projectId", "relativePath"], unique: true)
+
+            try db.create(table: "codeChunks") { t in
+                t.primaryKey("id", .text)
+                t.column("fileId", .text).notNull()
+                t.column("projectId", .text).notNull()
+                t.column("chunkType", .text).notNull()
+                t.column("symbolName", .text)
+                t.column("content", .text).notNull()
+                t.column("startLine", .integer)
+                t.column("endLine", .integer)
+                t.column("embedding", .blob)
+            }
+            try db.create(index: "codeChunks_projectId", on: "codeChunks", columns: ["projectId"])
+            try db.create(index: "codeChunks_fileId", on: "codeChunks", columns: ["fileId"])
+
+            try db.create(table: "indexState") { t in
+                t.primaryKey("projectId", .text)
+                t.column("status", .text).notNull().defaults(to: "idle")
+                t.column("lastFullIndexAt", .datetime)
+                t.column("totalChunks", .integer).notNull().defaults(to: 0)
+                t.column("lastError", .text)
+            }
+
+            try db.create(virtualTable: "codeChunksFts", using: FTS5()) { t in
+                t.synchronize(withTable: "codeChunks")
+                t.column("content")
+                t.column("symbolName")
+            }
+        }
+
         return migrator
     }
 }
