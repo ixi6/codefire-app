@@ -756,6 +756,59 @@ class MCPServer {
                     "required": ["ref"]
                 ]
             ],
+            // Phase 4: Upload, drag, iframe, session
+            [
+                "name": "browser_upload",
+                "description": "Set a file on an <input type='file'> element. Reads the file from disk, encodes it, and assigns it to the input. Triggers change and input events. Requires Context.app to be running with the browser tab visible.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "ref": ["type": "string", "description": "Element ref of the file input from browser_snapshot"],
+                        "path": ["type": "string", "description": "Absolute path to the file on disk"],
+                        "tab_id": ["type": "string", "description": "Tab ID (defaults to active tab)"]
+                    ],
+                    "required": ["ref", "path"]
+                ]
+            ],
+            [
+                "name": "browser_drag",
+                "description": "Drag an element to a target element using HTML5 drag and drop events. Dispatches the full drag event sequence: dragstart, drag, dragenter, dragover, drop, dragend. Requires Context.app to be running with the browser tab visible.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "from_ref": ["type": "string", "description": "Ref of the element to drag"],
+                        "to_ref": ["type": "string", "description": "Ref of the drop target element"],
+                        "tab_id": ["type": "string", "description": "Tab ID (defaults to active tab)"]
+                    ],
+                    "required": ["from_ref", "to_ref"]
+                ]
+            ],
+            [
+                "name": "browser_iframe",
+                "description": "Switch execution context to an iframe for subsequent commands (snapshot, click, type, etc.), or back to the main frame. Call with a ref to enter an iframe, or without ref to return to main frame. Only same-origin iframes are accessible. Use browser_snapshot to see available iframes. Requires Context.app to be running with the browser tab visible.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "ref": ["type": "string", "description": "Ref of the iframe element to enter. Omit to return to main frame."],
+                        "tab_id": ["type": "string", "description": "Tab ID (defaults to active tab)"]
+                    ]
+                ]
+            ],
+            [
+                "name": "browser_clear_session",
+                "description": "Clear browsing data (cookies, cache, localStorage). Useful for resetting login state, clearing cached data, or testing fresh page loads. Clears all data by default. Requires Context.app to be running.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "types": [
+                            "type": "array",
+                            "items": ["type": "string", "enum": ["cookies", "cache", "localStorage", "all"]],
+                            "description": "Data types to clear. Defaults to all."
+                        ],
+                        "tab_id": ["type": "string", "description": "Tab ID (defaults to active tab)"]
+                    ]
+                ]
+            ],
         ]
     }
 
@@ -804,6 +857,10 @@ class MCPServer {
             case "browser_press":       result = try browserPress(args)
             case "browser_eval":        result = try browserEval(args)
             case "browser_hover":       result = try browserHover(args)
+            case "browser_upload":     result = try browserUpload(args)
+            case "browser_drag":       result = try browserDrag(args)
+            case "browser_iframe":     result = try browserIframe(args)
+            case "browser_clear_session": result = try browserClearSession(args)
             default:
                 return errorResponse(id: req.id, code: -32602, message: "Unknown tool: \(toolName)")
             }
@@ -1493,6 +1550,46 @@ class MCPServer {
         var cmdArgs: [String: Any] = ["ref": ref]
         if let tabId = args["tab_id"] as? String { cmdArgs["tab_id"] = tabId }
         return try executeBrowserCommand(tool: "browser_hover", args: cmdArgs)
+    }
+
+    // MARK: - Phase 4: Upload, Drag, Iframe, Session
+
+    func browserUpload(_ args: [String: Any]) throws -> String {
+        guard let ref = args["ref"] as? String, !ref.isEmpty else {
+            throw MCPError(message: "ref is required")
+        }
+        guard let path = args["path"] as? String, !path.isEmpty else {
+            throw MCPError(message: "path is required")
+        }
+        var cmdArgs: [String: Any] = ["ref": ref, "path": path]
+        if let tabId = args["tab_id"] as? String { cmdArgs["tab_id"] = tabId }
+        return try executeBrowserCommand(tool: "browser_upload", args: cmdArgs, timeout: 10.0)
+    }
+
+    func browserDrag(_ args: [String: Any]) throws -> String {
+        guard let fromRef = args["from_ref"] as? String, !fromRef.isEmpty else {
+            throw MCPError(message: "from_ref is required")
+        }
+        guard let toRef = args["to_ref"] as? String, !toRef.isEmpty else {
+            throw MCPError(message: "to_ref is required")
+        }
+        var cmdArgs: [String: Any] = ["from_ref": fromRef, "to_ref": toRef]
+        if let tabId = args["tab_id"] as? String { cmdArgs["tab_id"] = tabId }
+        return try executeBrowserCommand(tool: "browser_drag", args: cmdArgs)
+    }
+
+    func browserIframe(_ args: [String: Any]) throws -> String {
+        var cmdArgs: [String: Any] = [:]
+        if let ref = args["ref"] as? String { cmdArgs["ref"] = ref }
+        if let tabId = args["tab_id"] as? String { cmdArgs["tab_id"] = tabId }
+        return try executeBrowserCommand(tool: "browser_iframe", args: cmdArgs)
+    }
+
+    func browserClearSession(_ args: [String: Any]) throws -> String {
+        var cmdArgs: [String: Any] = [:]
+        if let types = args["types"] as? [String] { cmdArgs["types"] = types }
+        if let tabId = args["tab_id"] as? String { cmdArgs["tab_id"] = tabId }
+        return try executeBrowserCommand(tool: "browser_clear_session", args: cmdArgs, timeout: 10.0)
     }
 
     // MARK: - Browser Command Execution

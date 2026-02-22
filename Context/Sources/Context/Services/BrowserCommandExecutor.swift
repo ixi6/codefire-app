@@ -130,6 +130,14 @@ class BrowserCommandExecutor: ObservableObject {
             return try await handleEval(args)
         case "browser_hover":
             return try await handleHover(args)
+        case "browser_upload":
+            return try await handleUpload(args)
+        case "browser_drag":
+            return try await handleDrag(args)
+        case "browser_iframe":
+            return try await handleIframe(args)
+        case "browser_clear_session":
+            return try await handleClearSession(args)
         default:
             throw BrowserCommandError.unknownTool(command.tool)
         }
@@ -408,6 +416,104 @@ class BrowserCommandExecutor: ObservableObject {
         return toJSON(result)
     }
 
+    // MARK: - Phase 4: Upload, Drag, Iframe, Session
+
+    private func handleUpload(_ args: [String: Any]) async throws -> String {
+        let tab = try resolveTab(args)
+        guard let ref = args["ref"] as? String, !ref.isEmpty else {
+            throw BrowserCommandError.missingParam("ref")
+        }
+        guard let path = args["path"] as? String, !path.isEmpty else {
+            throw BrowserCommandError.missingParam("path")
+        }
+
+        // Read file from disk
+        let fileURL = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw MCPBrowserError.fileNotFound(path: path)
+        }
+
+        let attrs = try FileManager.default.attributesOfItem(atPath: path)
+        let fileSize = attrs[.size] as? Int64 ?? 0
+        let maxSize: Int64 = 50 * 1024 * 1024 // 50MB
+        guard fileSize <= maxSize else {
+            throw MCPBrowserError.fileTooLarge(size: fileSize)
+        }
+
+        let data = try Data(contentsOf: fileURL)
+        let base64 = data.base64EncodedString()
+        let filename = fileURL.lastPathComponent
+        let mimeType = mimeTypeForExtension(fileURL.pathExtension)
+
+        let result = try await tab.uploadFile(ref: ref, fileData: base64, filename: filename, mimeType: mimeType)
+        if let error = result["error"] as? String {
+            if error == "not_found" { throw BrowserCommandError.refNotFound(ref) }
+            if error == "not_file_input" {
+                let tag = result["tag"] as? String ?? "unknown"
+                throw MCPBrowserError.notFileInput(ref: ref, tag: tag)
+            }
+        }
+        return toJSON(result)
+    }
+
+    private func handleDrag(_ args: [String: Any]) async throws -> String {
+        let tab = try resolveTab(args)
+        guard let fromRef = args["from_ref"] as? String, !fromRef.isEmpty else {
+            throw BrowserCommandError.missingParam("from_ref")
+        }
+        guard let toRef = args["to_ref"] as? String, !toRef.isEmpty else {
+            throw BrowserCommandError.missingParam("to_ref")
+        }
+        let result = try await tab.dragElement(fromRef: fromRef, toRef: toRef)
+        if let error = result["error"] as? String {
+            if error == "source_not_found" { throw BrowserCommandError.refNotFound(fromRef) }
+            if error == "target_not_found" { throw BrowserCommandError.refNotFound(toRef) }
+        }
+        return toJSON(result)
+    }
+
+    private func handleIframe(_ args: [String: Any]) async throws -> String {
+        let tab = try resolveTab(args)
+        let ref = args["ref"] as? String
+        let result = try await tab.switchToIframe(ref: ref)
+        if let error = result["error"] as? String {
+            if error == "not_found" { throw BrowserCommandError.refNotFound(ref ?? "unknown") }
+            if error == "not_iframe" {
+                let tag = result["tag"] as? String ?? "unknown"
+                throw MCPBrowserError.notIframe(ref: ref ?? "unknown", tag: tag)
+            }
+            if error == "cross_origin" {
+                let src = result["src"] as? String ?? ""
+                throw MCPBrowserError.crossOriginIframe(ref: ref ?? "unknown", src: src)
+            }
+        }
+        return toJSON(result)
+    }
+
+    private func handleClearSession(_ args: [String: Any]) async throws -> String {
+        let tab = try resolveTab(args)
+        let types = args["types"] as? [String] ?? []
+        let result = try await tab.clearSessionData(types: types)
+        return toJSON(result)
+    }
+
+    /// Map file extension to MIME type for uploads.
+    private func mimeTypeForExtension(_ ext: String) -> String {
+        let map: [String: String] = [
+            "pdf": "application/pdf",
+            "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+            "gif": "image/gif", "webp": "image/webp", "svg": "image/svg+xml",
+            "txt": "text/plain", "html": "text/html", "css": "text/css",
+            "js": "application/javascript", "json": "application/json",
+            "xml": "application/xml", "csv": "text/csv",
+            "zip": "application/zip", "doc": "application/msword",
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "xls": "application/vnd.ms-excel",
+            "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ]
+        return map[ext.lowercased()] ?? "application/octet-stream"
+    }
+
     // MARK: - Content Sanitization
 
     /// Strips prompt-injection patterns and dangerous content from browser-sourced text.
@@ -629,6 +735,11 @@ enum MCPBrowserError: LocalizedError {
     case notTypeable(ref: String, tag: String)
     case notSelect(ref: String, tag: String)
     case noFocusedElement
+    case notFileInput(ref: String, tag: String)
+    case notIframe(ref: String, tag: String)
+    case crossOriginIframe(ref: String, src: String)
+    case fileNotFound(path: String)
+    case fileTooLarge(size: Int64)
 
     var errorDescription: String? {
         switch self {
@@ -638,6 +749,16 @@ enum MCPBrowserError: LocalizedError {
             return "Element '\(ref)' (\(tag)) is not a <select> element."
         case .noFocusedElement:
             return "No element is currently focused. Provide a ref to target a specific element, or use browser_click to focus an element first."
+        case .notFileInput(let ref, let tag):
+            return "Element '\(ref)' (\(tag)) is not a file input. Target an <input type=\"file\"> element."
+        case .notIframe(let ref, let tag):
+            return "Element '\(ref)' (\(tag)) is not an iframe element."
+        case .crossOriginIframe(let ref, let src):
+            return "Cannot access cross-origin iframe '\(ref)' (src: \(src)). Only same-origin iframes are supported."
+        case .fileNotFound(let path):
+            return "File not found at path: \(path)"
+        case .fileTooLarge(let size):
+            return "File is too large (\(size) bytes). Maximum size is 50MB."
         }
     }
 }
