@@ -19,7 +19,14 @@ class DatabaseService {
         )
 
         let dbPath = appSupportURL.appendingPathComponent("context.db").path
-        dbQueue = try DatabaseQueue(path: dbPath)
+        var config = Configuration()
+        config.busyMode = .timeout(5.0) // Wait up to 5s for locks (cross-process access with ContextMCP)
+        dbQueue = try DatabaseQueue(path: dbPath, configuration: config)
+
+        // Enable WAL mode for concurrent cross-process access
+        try dbQueue.writeWithoutTransaction { db in
+            try db.execute(sql: "PRAGMA journal_mode=WAL")
+        }
 
         try migrator.migrate(dbQueue)
     }
@@ -279,7 +286,7 @@ class DatabaseService {
         }
 
         migrator.registerMigration("v14_createBrowserCommands") { db in
-            try db.create(table: "browserCommands") { t in
+            try db.create(table: "browserCommands", ifNotExists: true) { t in
                 t.autoIncrementedPrimaryKey("id")
                 t.column("tool", .text).notNull()
                 t.column("args", .text)

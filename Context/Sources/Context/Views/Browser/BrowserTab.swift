@@ -157,7 +157,7 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
     /// Runs in .defaultClient content world (invisible to page JS, bypasses CSP).
     @MainActor
     func snapshotAccessibilityTree() async throws -> String {
-        let js = Self.accessibilityTreeJS
+        let js = "try { return " + Self.accessibilityTreeJS + " } catch(e) { return 'ERROR: ' + e.message; }"
         return try await withCheckedThrowingContinuation { continuation in
             webView.callAsyncJavaScript(
                 js,

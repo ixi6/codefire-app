@@ -14,7 +14,14 @@ func openDatabase() throws -> DatabaseQueue {
     guard FileManager.default.fileExists(atPath: dbPath) else {
         throw MCPError(message: "Context database not found at \(dbPath). Launch Context.app first.")
     }
-    let db = try DatabaseQueue(path: dbPath)
+    var config = Configuration()
+    config.busyMode = .timeout(5.0) // Wait up to 5s for locks (cross-process access)
+    let db = try DatabaseQueue(path: dbPath, configuration: config)
+
+    // Enable WAL mode for concurrent cross-process access
+    try db.writeWithoutTransaction { db in
+        try db.execute(sql: "PRAGMA journal_mode=WAL")
+    }
 
     // Ensure browserCommands table exists (may not if GUI app hasn't launched since update)
     try db.write { conn in

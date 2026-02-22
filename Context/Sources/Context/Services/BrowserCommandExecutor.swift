@@ -9,55 +9,63 @@ class BrowserCommandExecutor: ObservableObject {
 
     private let db: DatabaseService
     private weak var browserViewModel: BrowserViewModel?
-    private var observation: AnyDatabaseCancellable?
+    private var pollTimer: Timer?
     private var cleanupTimer: Timer?
+    private var isProcessing = false
 
     init(db: DatabaseService = .shared) {
         self.db = db
     }
 
-    /// Start observing for pending browser commands.
+    /// Start polling for pending browser commands.
     /// Must be called after the BrowserViewModel is available.
     func start(browserViewModel: BrowserViewModel) {
         self.browserViewModel = browserViewModel
-        startObservation()
+        startPolling()
         startCleanupTimer()
     }
 
     func stop() {
-        observation?.cancel()
-        observation = nil
+        pollTimer?.invalidate()
+        pollTimer = nil
         cleanupTimer?.invalidate()
         cleanupTimer = nil
     }
 
-    // MARK: - Observation
+    // MARK: - Polling
 
-    private func startObservation() {
+    private func startPolling() {
+        // Poll every 100ms for pending commands from ContextMCP (cross-process writes)
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.pollForCommands()
+            }
+        }
+    }
+
+    private func pollForCommands() async {
+        guard !isProcessing else { return }
         guard let dbQueue = db.dbQueue else { return }
 
-        let observation = ValueObservation.tracking { db in
-            try BrowserCommand
-                .filter(Column("status") == "pending")
-                .order(Column("createdAt").asc)
-                .fetchAll(db)
+        isProcessing = true
+        defer { isProcessing = false }
+
+        let commands: [BrowserCommand]
+        do {
+            commands = try await dbQueue.read { db in
+                try BrowserCommand
+                    .filter(Column("status") == "pending")
+                    .order(Column("createdAt").asc)
+                    .fetchAll(db)
+            }
+        } catch {
+            print("BrowserCommandExecutor: poll error: \(error)")
+            return
         }
 
-        self.observation = observation.start(
-            in: dbQueue,
-            scheduling: .immediate,
-            onError: { error in
-                print("BrowserCommandExecutor: observation error: \(error)")
-            },
-            onChange: { [weak self] commands in
-                guard let self = self else { return }
-                Task { @MainActor in
-                    for command in commands {
-                        await self.execute(command)
-                    }
-                }
-            }
-        )
+        for command in commands {
+            await execute(command)
+        }
     }
 
     // MARK: - Command Dispatch
