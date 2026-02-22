@@ -440,7 +440,6 @@ struct ChatDrawerView: View {
 // MARK: - Chat Settings Popover
 
 private struct ChatSettingsPopover: View {
-    @State private var apiKey: String = ClaudeService.openRouterAPIKey ?? ""
     @State private var selectedModel: String = ClaudeService.openRouterModel
 
     private let models = [
@@ -459,33 +458,9 @@ private struct ChatSettingsPopover: View {
             Text("Chat Settings")
                 .font(.system(size: 13, weight: .semibold))
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("OpenRouter API Key")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
-                SecureField("sk-or-...", text: $apiKey)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12, design: .monospaced))
-                    .padding(6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(Color(nsColor: .textBackgroundColor))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 0.5)
-                    )
-                    .onChange(of: apiKey) { _, newValue in
-                        ClaudeService.openRouterAPIKey = newValue.isEmpty ? nil : newValue
-                    }
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Model")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
-                Picker("", selection: $selectedModel) {
-                    ForEach(models, id: \.0) { id, label in
+            GroupBox("Model") {
+                Picker("Model", selection: $selectedModel) {
+                    ForEach(models, id: \.0) { (id, label) in
                         Text(label).tag(id)
                     }
                 }
@@ -495,17 +470,24 @@ private struct ChatSettingsPopover: View {
                 }
             }
 
-            HStack {
-                Circle()
-                    .fill(apiKey.isEmpty ? Color.red : Color.green)
-                    .frame(width: 6, height: 6)
-                Text(apiKey.isEmpty ? "No API key set" : "API key configured")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+            GroupBox("API Key") {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Circle()
+                            .fill(ClaudeService.openRouterAPIKey?.isEmpty == false ? Color.green : Color.red)
+                            .frame(width: 8, height: 8)
+                        Text(ClaudeService.openRouterAPIKey?.isEmpty == false ? "API key configured" : "No API key set")
+                            .font(.system(size: 11))
+                    }
+                    Text("Configure in Settings \u{2192} Context Engine")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(4)
             }
         }
-        .padding(16)
-        .frame(width: 300)
+        .padding(12)
+        .frame(width: 260)
     }
 }
 
