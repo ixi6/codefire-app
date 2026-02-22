@@ -32,6 +32,8 @@ struct ProjectTaskSummary: View {
 
     @State private var projectTasks: [ProjectTaskCount] = []
 
+    private let refreshTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
@@ -79,6 +81,9 @@ struct ProjectTaskSummary: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .onAppear { loadProjectTasks() }
         .onReceive(NotificationCenter.default.publisher(for: .tasksDidChange)) { _ in
+            loadProjectTasks()
+        }
+        .onReceive(refreshTimer) { _ in
             loadProjectTasks()
         }
     }
