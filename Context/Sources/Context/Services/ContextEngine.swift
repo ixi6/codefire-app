@@ -10,6 +10,10 @@ class ContextEngine: ObservableObject {
     @Published var totalChunks: Int = 0
     @Published var isIndexing: Bool = false
     @Published var lastError: String?
+    @Published var indexProgress: Double = 0    // 0.0 to 1.0
+    @Published var indexedFileCount: Int = 0
+    @Published var totalFileCount: Int = 0
+    @Published var lastIndexedAt: Date?
 
     private let embeddingClient = EmbeddingClient()
     private var fileWatcher: FileWatcher?
@@ -42,6 +46,17 @@ class ContextEngine: ObservableObject {
 
         currentProjectId = projectId
         currentProjectPath = projectPath
+
+        // Load existing index state
+        if let state = try? DatabaseService.shared.dbQueue.read({ db in
+            try IndexState.filter(Column("projectId") == projectId).fetchOne(db)
+        }) {
+            totalChunks = state.totalChunks
+            lastIndexedAt = state.lastFullIndexAt
+            if state.status == "ready" {
+                indexStatus = "ready"
+            }
+        }
 
         // Start file watcher
         fileWatcher = FileWatcher(paths: [projectPath], debounceInterval: 2.0) { [weak self] changedPaths in
@@ -106,12 +121,16 @@ class ContextEngine: ObservableObject {
 
         isIndexing = true
         indexStatus = "indexing"
+        indexProgress = 0
+        indexedFileCount = 0
+        totalFileCount = 0
         lastError = nil
         await updateIndexState(projectId: projectId, status: "indexing")
 
         do {
             // 1. Enumerate files
             let files = enumerateFiles(at: projectPath)
+            totalFileCount = files.count
 
             // 2. Process each file
             var processedChunks = 0
@@ -193,6 +212,12 @@ class ContextEngine: ObservableObject {
                         totalChunks = processedChunks
                     }
                 }
+
+                // Update file-level progress
+                indexedFileCount += 1
+                if totalFileCount > 0 {
+                    indexProgress = Double(indexedFileCount) / Double(totalFileCount)
+                }
             }
 
             // Embed remaining chunks
@@ -210,6 +235,8 @@ class ContextEngine: ObservableObject {
             totalChunks = processedChunks
             indexStatus = "ready"
             isIndexing = false
+            indexProgress = 1.0
+            lastIndexedAt = Date()
             await updateIndexState(projectId: projectId, status: "ready", totalChunks: processedChunks)
 
         } catch {

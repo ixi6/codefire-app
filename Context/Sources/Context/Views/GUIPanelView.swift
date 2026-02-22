@@ -79,6 +79,7 @@ class MCPConnectionMonitor: ObservableObject {
 
 struct GUIPanelView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var contextEngine: ContextEngine
     @StateObject private var mcpMonitor = MCPConnectionMonitor()
     @StateObject private var browserViewModel = BrowserViewModel()
     @StateObject private var browserCommandExecutor = BrowserCommandExecutor()
@@ -229,6 +230,12 @@ struct GUIPanelView: View {
             Spacer()
 
             chatButton
+            IndexIndicator(
+                isIndexing: contextEngine.isIndexing,
+                indexStatus: contextEngine.indexStatus,
+                progress: contextEngine.indexProgress,
+                totalChunks: contextEngine.totalChunks
+            )
             ProfileIndicator(
                 isGenerating: appState.isProfileGenerating,
                 hasProfile: appState.projectProfile != nil
@@ -401,6 +408,69 @@ struct MCPIndicator: View {
     }
 }
 
+// MARK: - Index Indicator
+
+struct IndexIndicator: View {
+    let isIndexing: Bool
+    let indexStatus: String
+    let progress: Double
+    let totalChunks: Int
+
+    private var statusColor: Color {
+        switch indexStatus {
+        case "indexing": return .orange
+        case "ready": return .green
+        case "error": return .red
+        default: return .secondary.opacity(0.5)
+        }
+    }
+
+    private var label: String {
+        if isIndexing {
+            return "Indexing \(Int(progress * 100))%"
+        }
+        switch indexStatus {
+        case "ready": return "Codebase \(totalChunks)"
+        case "error": return "Codebase Error"
+        default: return "Codebase"
+        }
+    }
+
+    private var isActive: Bool {
+        isIndexing || indexStatus == "ready" || indexStatus == "error"
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if isIndexing {
+                ProgressView()
+                    .controlSize(.mini)
+                    .scaleEffect(0.6)
+            } else {
+                Image(systemName: indexStatus == "ready" ? "chevron.left.forwardslash.chevron.right" : "chevron.left.forwardslash.chevron.right")
+                    .font(.system(size: 10, weight: indexStatus == "ready" ? .semibold : .regular))
+                    .foregroundColor(statusColor)
+            }
+            Text(label)
+                .font(.system(size: 10, weight: isActive ? .semibold : .medium))
+                .foregroundColor(statusColor)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(statusColor.opacity(0.12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(
+                            isActive ? statusColor.opacity(0.3) : Color.clear,
+                            lineWidth: 1
+                        )
+                )
+        )
+    }
+}
+
 // MARK: - Profile Indicator
 
 struct ProfileIndicator: View {
@@ -414,15 +484,15 @@ struct ProfileIndicator: View {
     }
 
     private var label: String {
-        if isGenerating { return "Indexing" }
-        if hasProfile { return "Indexed" }
-        return "Profile"
+        if isGenerating { return "Filesystem" }
+        if hasProfile { return "Filesystem" }
+        return "Filesystem"
     }
 
     private var icon: String {
         if isGenerating { return "arrow.triangle.2.circlepath" }
-        if hasProfile { return "doc.text.magnifyingglass" }
-        return "doc.text.magnifyingglass"
+        if hasProfile { return "folder.fill" }
+        return "folder"
     }
 
     var body: some View {

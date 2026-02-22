@@ -113,6 +113,120 @@ struct ContextAssembler {
         return parts.joined(separator: "\n")
     }
 
+    // MARK: - RAG-Enhanced Context
+
+    /// Assemble project context with RAG: embeds the user's query, searches
+    /// the codebase index for relevant chunks, and injects them into the prompt.
+    /// Falls back to standard context if embedding or search fails.
+    static func projectContextWithRAG(
+        projectId: String,
+        projectName: String,
+        projectPath: String,
+        projectProfile: String? = nil,
+        query: String
+    ) async -> String {
+        // Get the base context (tasks, notes, sessions, profile)
+        let baseContext = projectContext(
+            projectId: projectId,
+            projectName: projectName,
+            projectPath: projectPath,
+            projectProfile: projectProfile
+        )
+
+        // Try to fetch relevant code chunks via embedding search
+        let codeSection = await searchCodeChunks(projectId: projectId, query: query)
+
+        if codeSection.isEmpty {
+            return baseContext
+        }
+
+        // Insert code section after the profile, before tasks
+        // Find where ACTIVE TASKS starts and inject before it
+        if let taskRange = baseContext.range(of: "\nACTIVE TASKS") {
+            var enriched = baseContext
+            enriched.insert(contentsOf: "\n" + codeSection + "\n", at: taskRange.lowerBound)
+            return enriched
+        }
+
+        // No tasks section — append at end
+        return baseContext + "\n" + codeSection
+    }
+
+    /// Embed the query and search codeChunks for the top 5 matches by cosine similarity.
+    private static func searchCodeChunks(projectId: String, query: String) async -> String {
+        let embeddingClient = EmbeddingClient()
+        let result = await embeddingClient.embed(query)
+
+        guard let queryVector = result.vector else {
+            return "" // Silently fall back — no code context
+        }
+
+        // Load all chunks with embeddings for this project (sync read to avoid GRDB async overload)
+        let chunks: [(CodeChunk, String)]
+        do {
+            chunks = try await DatabaseService.shared.dbQueue.read { db in
+                let sql = """
+                    SELECT c.*, f.relativePath
+                    FROM codeChunks c
+                    JOIN indexedFiles f ON c.fileId = f.id
+                    WHERE c.projectId = ? AND c.embedding IS NOT NULL
+                """
+                let rows = try Row.fetchAll(db, sql: sql, arguments: [projectId])
+                return try rows.map { row in
+                    let chunk = try CodeChunk(row: row)
+                    let path: String = row["relativePath"]
+                    return (chunk, path)
+                }
+            }
+        } catch {
+            return ""
+        }
+
+        if chunks.isEmpty { return "" }
+
+        // Score by cosine similarity
+        var scored: [(path: String, chunk: CodeChunk, score: Float)] = []
+        for (chunk, path) in chunks {
+            guard let vector = chunk.embeddingVector else { continue }
+            let sim = cosineSimilarity(queryVector, vector)
+            if sim > 0.3 {
+                scored.append((path, chunk, sim))
+            }
+        }
+
+        scored.sort { $0.score > $1.score }
+        let top = scored.prefix(5)
+
+        if top.isEmpty { return "" }
+
+        var section = "RELEVANT CODE (matching your question):\n"
+        for item in top {
+            let lines = [item.chunk.startLine, item.chunk.endLine]
+                .compactMap { $0 }
+                .map(String.init)
+                .joined(separator: "-")
+            let location = lines.isEmpty ? item.path : "\(item.path):\(lines)"
+            let symbol = item.chunk.symbolName.map { " (\($0))" } ?? ""
+            let content = String(item.chunk.content.prefix(500))
+            section += "--- \(location)\(symbol) ---\n\(content)\n\n"
+        }
+
+        return section
+    }
+
+    private static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
+        guard a.count == b.count, !a.isEmpty else { return 0 }
+        var dot: Float = 0, normA: Float = 0, normB: Float = 0
+        for i in 0..<a.count {
+            dot += a[i] * b[i]
+            normA += a[i] * a[i]
+            normB += b[i] * b[i]
+        }
+        let denom = sqrt(normA) * sqrt(normB)
+        guard denom > 0 else { return 0 }
+        return dot / denom
+    }
+
     /// Assemble context for the global/home view.
     static func globalContext() -> String {
         var parts: [String] = []

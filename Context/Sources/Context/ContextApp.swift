@@ -75,6 +75,38 @@ struct ContextApp: App {
         } catch {
             fatalError("Database setup failed: \(error)")
         }
+
+        // Deploy MCP binary to ~/Library/Application Support/Context/bin/
+        // macOS blocks binaries inside .app bundles from being spawned as subprocesses,
+        // so Claude Code needs the binary at a standalone path.
+        Self.deployMCPBinary()
+    }
+
+    /// Copies the ContextMCP binary from the app bundle to Application Support
+    /// so Claude Code can spawn it as an MCP server (binaries inside .app bundles hang).
+    private static func deployMCPBinary() {
+        guard let execURL = Bundle.main.executableURL else { return }
+        let bundleMCP = execURL.deletingLastPathComponent().appendingPathComponent("ContextMCP")
+        guard FileManager.default.fileExists(atPath: bundleMCP.path) else { return }
+
+        let dest = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first!.appendingPathComponent("Context/bin", isDirectory: true)
+        let destBinary = dest.appendingPathComponent("ContextMCP")
+
+        // Skip if already up-to-date (same size)
+        if let srcAttr = try? FileManager.default.attributesOfItem(atPath: bundleMCP.path),
+           let dstAttr = try? FileManager.default.attributesOfItem(atPath: destBinary.path),
+           let srcSize = srcAttr[.size] as? Int,
+           let dstSize = dstAttr[.size] as? Int,
+           srcSize == dstSize {
+            return
+        }
+
+        try? FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: destBinary)
+        try? FileManager.default.copyItem(at: bundleMCP, to: destBinary)
+        // Ensure executable
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destBinary.path)
     }
 
     var body: some Scene {
@@ -102,9 +134,7 @@ struct ContextApp: App {
                         devEnvironment.scan(projectPath: project.path)
                         projectAnalyzer.scan(projectPath: project.path)
                         githubService.startMonitoring(projectPath: project.path)
-                        if appSettings.contextSearchEnabled {
-                            contextEngine.startIndexing(projectId: project.id, projectPath: project.path)
-                        }
+                        contextEngine.startIndexing(projectId: project.id, projectPath: project.path)
                         if let claudeDir = project.claudeProject {
                             liveMonitor.startMonitoring(claudeProjectPath: claudeDir)
                         }

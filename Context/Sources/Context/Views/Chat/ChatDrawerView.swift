@@ -45,16 +45,9 @@ struct ChatDrawerView: View {
                             .id(msg.id)
                         }
                         if claudeService.isGenerating {
-                            HStack(spacing: 6) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .scaleEffect(0.7)
-                                Text("Thinking...")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .padding(.horizontal, 12)
-                            .id("loading")
+                            ThinkingIndicator()
+                                .padding(.horizontal, 12)
+                                .id("loading")
                         }
                     }
                     .padding(12)
@@ -318,14 +311,15 @@ struct ChatDrawerView: View {
                 return
             }
 
-            // Assemble context
+            // Assemble context (with RAG codebase search for project chats)
             let context: String
             if let project = appState.currentProject {
-                context = ContextAssembler.projectContext(
+                context = await ContextAssembler.projectContextWithRAG(
                     projectId: project.id,
                     projectName: project.name,
                     projectPath: project.path,
-                    projectProfile: appState.projectProfile
+                    projectProfile: appState.projectProfile,
+                    query: text
                 )
             } else {
                 context = ContextAssembler.globalContext()
@@ -440,17 +434,15 @@ struct ChatDrawerView: View {
 // MARK: - Chat Settings Popover
 
 private struct ChatSettingsPopover: View {
-    @State private var selectedModel: String = ClaudeService.openRouterModel
-
-    private let models = [
-        ("google/gemini-3.1-pro-preview", "Gemini 3.1 Pro"),
-        ("google/gemini-3-flash-preview", "Gemini 3 Flash"),
-        ("qwen/qwen3.5-plus-02-15", "Qwen 3.5 Plus"),
-        ("qwen/qwen3-coder-next", "Qwen3 Coder Next"),
-        ("deepseek/deepseek-v3.2", "DeepSeek V3.2"),
-        ("minimax/minimax-m2.5", "MiniMax M2.5"),
-        ("z-ai/glm-5", "GLM-5"),
-        ("moonshotai/kimi-k2.5", "Kimi K2.5"),
+    private let modelNames: [String: String] = [
+        "google/gemini-3.1-pro-preview": "Gemini 3.1 Pro",
+        "google/gemini-3-flash-preview": "Gemini 3 Flash",
+        "qwen/qwen3.5-plus-02-15": "Qwen 3.5 Plus",
+        "qwen/qwen3-coder-next": "Qwen3 Coder Next",
+        "deepseek/deepseek-v3.2": "DeepSeek V3.2",
+        "minimax/minimax-m2.5": "MiniMax M2.5",
+        "z-ai/glm-5": "GLM-5",
+        "moonshotai/kimi-k2.5": "Kimi K2.5",
     ]
 
     var body: some View {
@@ -459,15 +451,14 @@ private struct ChatSettingsPopover: View {
                 .font(.system(size: 13, weight: .semibold))
 
             GroupBox("Model") {
-                Picker("Model", selection: $selectedModel) {
-                    ForEach(models, id: \.0) { (id, label) in
-                        Text(label).tag(id)
-                    }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(modelNames[ClaudeService.openRouterModel] ?? ClaudeService.openRouterModel)
+                        .font(.system(size: 12, weight: .medium))
+                    Text("Configure in Settings \u{2192} Context Engine")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
                 }
-                .labelsHidden()
-                .onChange(of: selectedModel) { _, newValue in
-                    ClaudeService.openRouterModel = newValue
-                }
+                .padding(4)
             }
 
             GroupBox("API Key") {
@@ -488,6 +479,55 @@ private struct ChatSettingsPopover: View {
         }
         .padding(12)
         .frame(width: 260)
+    }
+}
+
+// MARK: - Thinking Indicator
+
+private struct ThinkingIndicator: View {
+    private static let phrases = [
+        "Thinking...",
+        "Searching the codebase...",
+        "Digging through files...",
+        "Scouring memories...",
+        "Connecting the dots...",
+        "Reading the source...",
+        "Pulling context together...",
+        "Checking notes and tasks...",
+        "Almost there...",
+    ]
+
+    @State private var currentIndex = 0
+    @State private var opacity: Double = 1.0
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.small)
+                .scaleEffect(0.7)
+            Text(Self.phrases[currentIndex])
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .opacity(opacity)
+        }
+        .onAppear {
+            startCycling()
+        }
+    }
+
+    private func startCycling() {
+        // Advance every 2.5s with a fade transition
+        Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { timer in
+            withAnimation(.easeOut(duration: 0.3)) {
+                opacity = 0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                currentIndex = (currentIndex + 1) % Self.phrases.count
+                withAnimation(.easeIn(duration: 0.3)) {
+                    opacity = 1
+                }
+            }
+        }
     }
 }
 

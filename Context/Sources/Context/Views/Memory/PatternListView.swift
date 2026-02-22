@@ -20,6 +20,7 @@ struct MemoryFile: Identifiable, Hashable {
 /// making this a direct context engine for shaping Claude's project knowledge.
 struct MemoryEditorView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var contextEngine: ContextEngine
     @State private var files: [MemoryFile] = []
     @State private var selectedFile: MemoryFile?
     @State private var editorContent: String = ""
@@ -68,12 +69,98 @@ struct MemoryEditorView: View {
     // MARK: - Layouts
 
     private var editorLayout: some View {
-        HSplitView {
-            fileListPanel
-                .frame(minWidth: 140, idealWidth: 170, maxWidth: 220)
+        VStack(spacing: 0) {
+            indexStatusCard
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
 
-            editorPanel
-                .frame(minWidth: 300)
+            Divider()
+
+            HSplitView {
+                fileListPanel
+                    .frame(minWidth: 140, idealWidth: 170, maxWidth: 220)
+
+                editorPanel
+                    .frame(minWidth: 300)
+            }
+        }
+    }
+
+    // MARK: - Index Status Card
+
+    private var indexStatusCard: some View {
+        HStack(spacing: 12) {
+            // Status pill
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(indexCardStatusColor)
+                    .frame(width: 8, height: 8)
+                Text(indexCardStatusLabel)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(indexCardStatusColor)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                Capsule()
+                    .fill(indexCardStatusColor.opacity(0.12))
+            )
+
+            // Stats
+            if contextEngine.totalChunks > 0 {
+                Label("\(contextEngine.totalChunks) chunks", systemImage: "square.stack.3d.up")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+
+            if contextEngine.totalFileCount > 0 || contextEngine.indexedFileCount > 0 {
+                Label("\(contextEngine.indexedFileCount)/\(contextEngine.totalFileCount) files", systemImage: "doc")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+
+            if let lastIndexed = contextEngine.lastIndexedAt {
+                Label(lastIndexed.formatted(.relative(presentation: .named)), systemImage: "clock")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            if let error = contextEngine.lastError {
+                Text(error)
+                    .font(.system(size: 10))
+                    .foregroundColor(.red)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            if contextEngine.isIndexing {
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.7)
+                Text("\(Int(contextEngine.indexProgress * 100))%")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundColor(.orange)
+            }
+        }
+    }
+
+    private var indexCardStatusColor: Color {
+        switch contextEngine.indexStatus {
+        case "ready": return .green
+        case "indexing": return .orange
+        case "error": return .red
+        default: return .secondary
+        }
+    }
+
+    private var indexCardStatusLabel: String {
+        switch contextEngine.indexStatus {
+        case "ready": return "Ready"
+        case "indexing": return "Indexing"
+        case "error": return "Error"
+        default: return "Idle"
         }
     }
 

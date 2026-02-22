@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "context-tasks": {
-      "command": "/Applications/Context.app/Contents/MacOS/ContextMCP"
+      "command": "/Users/nicknorris/Library/Application Support/Context/bin/ContextMCP"
     }
   }
 }

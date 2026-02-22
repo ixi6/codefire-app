@@ -15,6 +15,7 @@ struct ProjectWindowView: View {
     @StateObject private var projectAnalyzer = ProjectAnalyzer()
     @StateObject private var claudeService = ClaudeService()
     @StateObject private var githubService = GitHubService()
+    @StateObject private var contextEngine = ContextEngine()
 
     @State private var projectPath: String = ""
     @State private var project: Project?
@@ -46,6 +47,7 @@ struct ProjectWindowView: View {
         .environmentObject(projectAnalyzer)
         .environmentObject(claudeService)
         .environmentObject(githubService)
+        .environmentObject(contextEngine)
         .background(Color(nsColor: .windowBackgroundColor))
         .ignoresSafeArea()
         .background(WindowConfigurator(title: project?.name))
@@ -57,6 +59,7 @@ struct ProjectWindowView: View {
             liveMonitor.stopMonitoring()
             sessionWatcher.stopWatching()
             githubService.stopMonitoring()
+            contextEngine.stopWatching()
         }
     }
 
@@ -73,6 +76,7 @@ struct ProjectWindowView: View {
             devEnvironment.scan(projectPath: loaded.path)
             projectAnalyzer.scan(projectPath: loaded.path)
             githubService.startMonitoring(projectPath: loaded.path)
+            contextEngine.startIndexing(projectId: loaded.id, projectPath: loaded.path)
             if let claudeDir = loaded.claudeProject {
                 liveMonitor.startMonitoring(claudeProjectPath: claudeDir)
             }

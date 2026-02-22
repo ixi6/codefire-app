@@ -1747,11 +1747,12 @@ class MCPServer {
         }
 
         // Get API key for query embedding
-        guard let apiKey = UserDefaults.standard.string(forKey: "openRouterAPIKey"), !apiKey.isEmpty else {
+        let appDefaults = UserDefaults(suiteName: "com.context.app")
+        guard let apiKey = appDefaults?.string(forKey: "openRouterAPIKey"), !apiKey.isEmpty else {
             throw MCPError(message: "OpenRouter API key not configured. Set it in Context.app Settings > Context Engine.")
         }
 
-        let model = UserDefaults.standard.string(forKey: "embeddingModel") ?? "openai/text-embedding-3-small"
+        let model = appDefaults?.string(forKey: "embeddingModel") ?? "openai/text-embedding-3-small"
 
         // Embed the query
         let queryVector = try embedQuery(query: query, apiKey: apiKey, model: model)
@@ -1985,8 +1986,7 @@ class MCPServer {
         guard !response.isEmpty else { return }
         if let data = try? JSONSerialization.data(withJSONObject: response),
            let str = String(data: data, encoding: .utf8) {
-            print(str)
-            fflush(stdout)
+            FileHandle.standardOutput.write((str + "\n").data(using: .utf8)!)
         }
     }
 }
