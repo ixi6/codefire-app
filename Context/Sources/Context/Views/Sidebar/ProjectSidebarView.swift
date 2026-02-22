@@ -129,7 +129,14 @@ struct ProjectSidebarView: View {
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
+            let path = url.path
+            // Add the project (this may call selectProject internally, but we override below)
             appState.addProjectFromFolder(url)
+            // Find the project by path and open in a new window
+            if let project = appState.projects.first(where: { $0.path == path }) {
+                appState.selectHome()
+                openWindow(value: project.id)
+            }
         }
     }
 
