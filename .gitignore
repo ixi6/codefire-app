@@ -27,3 +27,6 @@ build/
 
 # Firebase
 firebase-debug.log
+
+# Claude Code
+.claude/
