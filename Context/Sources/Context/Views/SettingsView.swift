@@ -194,7 +194,7 @@ private struct ContextEngineSettingsTab: View {
                 Toggle("Auto-snapshot sessions", isOn: $settings.autoSnapshotSessions)
                 Toggle("Auto-update codebase tree", isOn: $settings.autoUpdateCodebaseTree)
                 Toggle("MCP server auto-start", isOn: $settings.mcpServerAutoStart)
-                Toggle("CLAUDE.md injection", isOn: $settings.claudeMDInjection)
+                Toggle("Instruction file injection", isOn: $settings.instructionInjection)
 
                 HStack {
                     Text("Snapshot debounce: \(Int(settings.snapshotDebounce))s")

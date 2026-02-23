@@ -10,8 +10,8 @@ class AppSettings: ObservableObject {
     @Published var mcpServerAutoStart: Bool {
         didSet { UserDefaults.standard.set(mcpServerAutoStart, forKey: "mcpServerAutoStart") }
     }
-    @Published var claudeMDInjection: Bool {
-        didSet { UserDefaults.standard.set(claudeMDInjection, forKey: "claudeMDInjection") }
+    @Published var instructionInjection: Bool {
+        didSet { UserDefaults.standard.set(instructionInjection, forKey: "claudeMDInjection") }
     }
     @Published var snapshotDebounce: Double {
         didSet { UserDefaults.standard.set(snapshotDebounce, forKey: "snapshotDebounce") }
@@ -43,7 +43,7 @@ class AppSettings: ObservableObject {
         self.autoSnapshotSessions = defaults.object(forKey: "autoSnapshotSessions") as? Bool ?? true
         self.autoUpdateCodebaseTree = defaults.object(forKey: "autoUpdateCodebaseTree") as? Bool ?? true
         self.mcpServerAutoStart = defaults.object(forKey: "mcpServerAutoStart") as? Bool ?? true
-        self.claudeMDInjection = defaults.object(forKey: "claudeMDInjection") as? Bool ?? true
+        self.instructionInjection = defaults.object(forKey: "claudeMDInjection") as? Bool ?? true
         self.snapshotDebounce = defaults.object(forKey: "snapshotDebounce") as? Double ?? 30.0
         self.terminalFontSize = defaults.object(forKey: "terminalFontSize") as? Double ?? 13.0
         self.scrollbackLines = defaults.object(forKey: "scrollbackLines") as? Int ?? 10000
