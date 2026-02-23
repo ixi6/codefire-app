@@ -34,6 +34,9 @@ class AppSettings: ObservableObject {
     @Published var embeddingModel: String {
         didSet { UserDefaults.standard.set(embeddingModel, forKey: "embeddingModel") }
     }
+    @Published var preferredCLI: CLIProvider {
+        didSet { UserDefaults.standard.set(preferredCLI.rawValue, forKey: "preferredCLI") }
+    }
 
     init() {
         let defaults = UserDefaults.standard
@@ -48,5 +51,6 @@ class AppSettings: ObservableObject {
         self.gmailSyncInterval = defaults.object(forKey: "gmailSyncInterval") as? Double ?? 300
         self.contextSearchEnabled = defaults.object(forKey: "contextSearchEnabled") as? Bool ?? true
         self.embeddingModel = defaults.string(forKey: "embeddingModel") ?? "openai/text-embedding-3-small"
+        self.preferredCLI = CLIProvider(rawValue: defaults.string(forKey: "preferredCLI") ?? "") ?? .claude
     }
 }

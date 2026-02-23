@@ -33,10 +33,32 @@ struct SettingsView: View {
 // MARK: - General Tab
 
 private struct GeneralSettingsTab: View {
+    @EnvironmentObject var appSettings: AppSettings
+
     var body: some View {
         Form {
-            Text("General settings")
-                .foregroundStyle(.secondary)
+            Section("Preferred CLI") {
+                Picker("Default coding CLI", selection: $appSettings.preferredCLI) {
+                    ForEach(CLIProvider.allCases) { cli in
+                        HStack(spacing: 8) {
+                            Image(systemName: cli.iconName)
+                                .foregroundColor(cli.color)
+                            Text(cli.displayName)
+                            if !cli.isInstalled {
+                                Text("Not installed")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .tag(cli)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+
+                Text("Used for task launcher and quick-launch buttons")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
         }
         .formStyle(.grouped)
         .padding()
