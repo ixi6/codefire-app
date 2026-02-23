@@ -25,6 +25,11 @@ struct SettingsView: View {
                 .tabItem {
                     Label("Gmail", systemImage: "envelope")
                 }
+
+            BriefingSettingsTab(settings: settings)
+                .tabItem {
+                    Label("Briefing", systemImage: "bell.badge")
+                }
         }
         .frame(width: 500, height: 550)
     }

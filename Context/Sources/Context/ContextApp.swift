@@ -59,6 +59,7 @@ struct ContextApp: App {
     @StateObject private var oauthManager: GoogleOAuthManager
     @StateObject private var gmailPoller: GmailPoller
     @StateObject private var contextEngine = ContextEngine()
+    @StateObject private var briefingService = BriefingService()
 
     init() {
         // Register as a foreground GUI app. Without this, a bare SPM executable
@@ -121,11 +122,15 @@ struct ContextApp: App {
                 .environmentObject(gmailPoller)
                 .environmentObject(githubService)
                 .environmentObject(contextEngine)
+                .environmentObject(briefingService)
                 .onAppear {
                     NSApplication.shared.activate(ignoringOtherApps: true)
                     appState.loadProjects()
                     if appSettings.gmailSyncEnabled {
                         gmailPoller.startPolling(interval: appSettings.gmailSyncInterval)
+                    }
+                    Task {
+                        await briefingService.checkAndGenerate(settings: appSettings)
                     }
                 }
                 .onChange(of: appState.currentProject) { _, project in

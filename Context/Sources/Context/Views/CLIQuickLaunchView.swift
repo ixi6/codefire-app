@@ -13,7 +13,7 @@ struct CLIQuickLaunchView: View {
     private let injector = ContextInjector()
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 6) {
             let _ = installCacheLoaded  // force re-evaluation after cache loads
             ForEach(CLIProvider.allCases) { cli in
                 cliMenu(for: cli)
@@ -71,24 +71,37 @@ struct CLIQuickLaunchView: View {
                 }
             }
         } label: {
-            ZStack {
-                Image(systemName: cli.iconName)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(installed ? cli.color : .secondary.opacity(0.3))
-                    .frame(width: 28, height: 26)
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(installed ? cli.color : .secondary.opacity(0.3))
+                    .frame(width: 7, height: 7)
 
-                // Preferred indicator dot
-                if isPreferred {
-                    Circle()
-                        .fill(cli.color)
-                        .frame(width: 5, height: 5)
-                        .offset(x: 8, y: -8)
-                }
+                Text(cli.shortName)
+                    .font(.system(size: 11, weight: isPreferred ? .semibold : .medium))
+                    .foregroundColor(installed ? .primary : .secondary.opacity(0.5))
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background {
+                Capsule()
+                    .fill(isPreferred
+                        ? cli.color.opacity(0.15)
+                        : Color.secondary.opacity(0.08))
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(isPreferred
+                                ? cli.color.opacity(0.3)
+                                : Color.secondary.opacity(0.15),
+                            lineWidth: 1)
+                    )
             }
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .frame(width: 28)
         .help(cli.displayName + (installed ? "" : " (not installed)"))
     }
 

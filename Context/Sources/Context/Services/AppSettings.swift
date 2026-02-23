@@ -38,6 +38,25 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(preferredCLI.rawValue, forKey: "preferredCLI") }
     }
 
+    // Briefing
+    @Published var briefingStalenessHours: Double {
+        didSet { UserDefaults.standard.set(briefingStalenessHours, forKey: "briefingStalenessHours") }
+    }
+    @Published var briefingRSSFeeds: [String] {
+        didSet {
+            if let data = try? JSONEncoder().encode(briefingRSSFeeds) {
+                UserDefaults.standard.set(data, forKey: "briefingRSSFeeds")
+            }
+        }
+    }
+    @Published var briefingSubreddits: [String] {
+        didSet {
+            if let data = try? JSONEncoder().encode(briefingSubreddits) {
+                UserDefaults.standard.set(data, forKey: "briefingSubreddits")
+            }
+        }
+    }
+
     init() {
         let defaults = UserDefaults.standard
         self.autoSnapshotSessions = defaults.object(forKey: "autoSnapshotSessions") as? Bool ?? true
@@ -52,5 +71,26 @@ class AppSettings: ObservableObject {
         self.contextSearchEnabled = defaults.object(forKey: "contextSearchEnabled") as? Bool ?? true
         self.embeddingModel = defaults.string(forKey: "embeddingModel") ?? "openai/text-embedding-3-small"
         self.preferredCLI = CLIProvider(rawValue: defaults.string(forKey: "preferredCLI") ?? "") ?? .claude
+
+        self.briefingStalenessHours = defaults.object(forKey: "briefingStalenessHours") as? Double ?? 6.0
+
+        let defaultFeeds = [
+            "https://www.anthropic.com/feed",
+            "https://openai.com/blog/rss.xml",
+            "https://blog.google/technology/ai/rss/",
+            "https://simonwillison.net/atom/everything/",
+            "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
+            "https://techcrunch.com/category/artificial-intelligence/feed/",
+            "https://blog.langchain.dev/rss/",
+            "https://huggingface.co/blog/feed.xml",
+        ]
+        self.briefingRSSFeeds = defaults.data(forKey: "briefingRSSFeeds")
+            .flatMap { try? JSONDecoder().decode([String].self, from: $0) }
+            ?? defaultFeeds
+
+        let defaultSubs = ["programming", "MachineLearning", "LocalLLaMA"]
+        self.briefingSubreddits = defaults.data(forKey: "briefingSubreddits")
+            .flatMap { try? JSONDecoder().decode([String].self, from: $0) }
+            ?? defaultSubs
     }
 }

@@ -21,6 +21,16 @@ enum CLIProvider: String, CaseIterable, Codable, Identifiable, Hashable {
         }
     }
 
+    /// Short label for compact pill buttons.
+    var shortName: String {
+        switch self {
+        case .claude:   return "Claude"
+        case .gemini:   return "Gemini"
+        case .codex:    return "Codex"
+        case .opencode: return "OpenCode"
+        }
+    }
+
     var iconName: String {
         switch self {
         case .claude:   return "c.circle.fill"

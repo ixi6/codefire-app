@@ -123,7 +123,7 @@ class GmailPoller: ObservableObject {
             return 0
         }
 
-        let query = "(\(whitelistQuery)) -in:spam -in:trash"
+        let query = "(\(whitelistQuery)) -from:me -in:sent -in:spam -in:trash"
         log("[\(account.email)] Query: \(query)")
         log("[\(account.email)] Looking back to \(after.formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
 
@@ -188,6 +188,13 @@ class GmailPoller: ObservableObject {
         let triageResults = await Task.detached {
             EmailTriageService.triageEmails(triageInput)
         }.value
+
+        let actionableCount = triageResults.compactMap { $0 }.count
+        if actionableCount == 0 && !triageResults.isEmpty {
+            log("[\(account.email)] ⚠️ Triage returned no actionable emails — Claude CLI may not be reachable from app context")
+        } else {
+            log("[\(account.email)] Triage: \(actionableCount) actionable, \(triageResults.count - actionableCount) FYI")
+        }
 
         var newTasks = 0
         for (i, (msg, match)) in whitelistedMessages.enumerated() {

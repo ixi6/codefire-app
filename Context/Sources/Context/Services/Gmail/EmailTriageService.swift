@@ -51,6 +51,7 @@ enum EmailTriageService {
         """
 
         guard let raw = callClaude(prompt: prompt) else {
+            print("EmailTriageService: Claude CLI not found or returned no output — all emails will be classified as FYI")
             return emails.map { _ in nil }
         }
 
@@ -118,31 +119,53 @@ enum EmailTriageService {
     }
 
     private nonisolated static func findClaudeBinary() -> String? {
-        let candidates = [
+        let home = NSHomeDirectory()
+        var candidates = [
             "/usr/local/bin/claude",
             "/opt/homebrew/bin/claude",
-            "\(NSHomeDirectory())/.npm/bin/claude",
-            "\(NSHomeDirectory())/.local/bin/claude",
-            "\(NSHomeDirectory())/.nvm/current/bin/claude",
+            "\(home)/.npm/bin/claude",
+            "\(home)/.local/bin/claude",
+            "\(home)/.nvm/current/bin/claude",
+            "\(home)/.volta/bin/claude",
         ]
-        for path in candidates {
-            if FileManager.default.fileExists(atPath: path) { return path }
+
+        // Also check NVM versioned directories (e.g. ~/.nvm/versions/node/v22.x/bin/claude)
+        let nvmVersions = "\(home)/.nvm/versions/node"
+        if let dirs = try? FileManager.default.contentsOfDirectory(atPath: nvmVersions) {
+            for dir in dirs.sorted().reversed() { // newest version first
+                candidates.append("\(nvmVersions)/\(dir)/bin/claude")
+            }
         }
-        let which = Process()
+
+        for path in candidates {
+            if FileManager.default.fileExists(atPath: path) {
+                print("EmailTriageService: found claude at \(path)")
+                return path
+            }
+        }
+
+        // Fallback: use a login shell to resolve PATH (handles .zshrc, .bashrc, etc.)
+        // This is critical for .app bundles which don't inherit terminal PATH
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let shellWhich = Process()
         let pipe = Pipe()
-        which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        which.arguments = ["claude"]
-        which.standardOutput = pipe
-        which.standardError = FileHandle.nullDevice
-        which.environment = ProcessInfo.processInfo.environment
+        shellWhich.executableURL = URL(fileURLWithPath: shell)
+        shellWhich.arguments = ["-lc", "which claude"]
+        shellWhich.standardOutput = pipe
+        shellWhich.standardError = FileHandle.nullDevice
         do {
-            try which.run()
-            which.waitUntilExit()
+            try shellWhich.run()
+            shellWhich.waitUntilExit()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             if let path = String(data: data, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
-               !path.isEmpty { return path }
+               !path.isEmpty, shellWhich.terminationStatus == 0 {
+                print("EmailTriageService: found claude via shell at \(path)")
+                return path
+            }
         } catch {}
+
+        print("EmailTriageService: claude binary not found anywhere")
         return nil
     }
 }

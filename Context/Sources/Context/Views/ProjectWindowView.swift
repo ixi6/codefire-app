@@ -16,6 +16,7 @@ struct ProjectWindowView: View {
     @StateObject private var claudeService = ClaudeService()
     @StateObject private var githubService = GitHubService()
     @StateObject private var contextEngine = ContextEngine()
+    @StateObject private var briefingService = BriefingService()
 
     @State private var projectPath: String = ""
     @State private var project: Project?
@@ -48,6 +49,7 @@ struct ProjectWindowView: View {
         .environmentObject(claudeService)
         .environmentObject(githubService)
         .environmentObject(contextEngine)
+        .environmentObject(briefingService)
         .background(Color(nsColor: .windowBackgroundColor))
         .ignoresSafeArea()
         .background(WindowConfigurator(title: project?.name))

@@ -342,6 +342,30 @@ class DatabaseService {
             }
         }
 
+        migrator.registerMigration("v16_createBriefing") { db in
+            try db.create(table: "briefingDigests") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("generatedAt", .datetime).notNull().defaults(sql: "CURRENT_TIMESTAMP")
+                t.column("itemCount", .integer).notNull().defaults(to: 0)
+                t.column("status", .text).notNull().defaults(to: "generating")
+            }
+
+            try db.create(table: "briefingItems") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("digestId", .integer).notNull()
+                    .references("briefingDigests", onDelete: .cascade)
+                t.column("title", .text).notNull()
+                t.column("summary", .text).notNull()
+                t.column("category", .text).notNull()
+                t.column("sourceUrl", .text).notNull()
+                t.column("sourceName", .text).notNull()
+                t.column("publishedAt", .datetime)
+                t.column("relevanceScore", .integer).notNull().defaults(to: 5)
+                t.column("isSaved", .boolean).notNull().defaults(to: false)
+                t.column("isRead", .boolean).notNull().defaults(to: false)
+            }
+        }
+
         return migrator
     }
 }
