@@ -382,6 +382,24 @@ class DatabaseService {
             }
         }
 
+        migrator.registerMigration("v17_createGeneratedImages") { db in
+            try db.create(table: "generatedImages") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("projectId", .text).notNull()
+                    .references("projects", onDelete: .cascade)
+                t.column("prompt", .text).notNull()
+                t.column("responseText", .text)
+                t.column("filePath", .text).notNull()
+                t.column("model", .text).notNull()
+                    .defaults(to: "google/gemini-3.1-flash-image-preview")
+                t.column("aspectRatio", .text).defaults(to: "1:1")
+                t.column("imageSize", .text).defaults(to: "1K")
+                t.column("parentImageId", .integer)
+                    .references("generatedImages", onDelete: .setNull)
+                t.column("createdAt", .datetime).notNull()
+            }
+        }
+
         return migrator
     }
 }
