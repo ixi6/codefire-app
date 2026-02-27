@@ -23,6 +23,7 @@ struct BrowserView: View {
 
     @State private var activeSheet: BrowserSheet?
     @State private var showConsolePopover = false
+    @State private var showDevTools = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -64,6 +65,13 @@ struct BrowserView: View {
                 }
             }
 
+            // DevTools panel
+            if showDevTools, let activeTab = viewModel.activeTab {
+                Divider()
+                DevToolsPanel(tab: activeTab, isVisible: $showDevTools)
+                    .frame(height: 250)
+            }
+
             // Screenshot gallery strip
             if let projectId = appState.currentProject?.id {
                 Divider()
@@ -71,8 +79,9 @@ struct BrowserView: View {
             }
         }
         .onChange(of: viewModel.activeTabId) { oldId, newId in
-            // Unload the previously active tab to free memory
+            // Stop element picker and unload the previously active tab to free memory
             if let oldId, let oldTab = viewModel.tabs.first(where: { $0.id == oldId }) {
+                oldTab.stopElementPicker()
                 oldTab.unloadWebView()
             }
             // Reload the newly active tab if it was unloaded
@@ -271,6 +280,24 @@ struct BrowserView: View {
                     ConsoleLogPopover(tab: tab)
                 }
             }
+
+            // DevTools toggle
+            Button {
+                showDevTools.toggle()
+            } label: {
+                Image(systemName: "hammer")
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(width: 26, height: 26)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(showDevTools ? Color.accentColor.opacity(0.2) : Color.clear)
+                    )
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.activeTab == nil)
+            .foregroundColor(showDevTools ? .accentColor : (viewModel.activeTab != nil ? .primary : .secondary.opacity(0.4)))
+            .help("Toggle DevTools")
         }
     }
 
