@@ -62,6 +62,7 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
     @Published var networkRequests: [NetworkRequestEntry] = []
     @Published var isNetworkMonitorActive = false
     private static let maxNetworkEntries = 200
+    private var networkMonitorScript: WKUserScript?
 
     private static let maxLogEntries = 500
     private var observations: [NSKeyValueObservation] = []
@@ -828,35 +829,49 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
     @MainActor
     func startNetworkMonitor() {
         isNetworkMonitorActive = true
+
         let js = """
             (function() {
                 if (window.__ctxNetworkMonitorActive) return;
                 window.__ctxNetworkMonitorActive = true;
                 var reqCounter = 0;
 
-                // Store originals
                 window.__ctxOrigFetch = window.fetch;
                 window.__ctxOrigXHROpen = XMLHttpRequest.prototype.open;
                 window.__ctxOrigXHRSend = XMLHttpRequest.prototype.send;
 
-                // Wrap fetch
+                function headersToObj(headers) {
+                    var obj = {};
+                    if (headers && typeof headers.forEach === 'function') {
+                        headers.forEach(function(v, k) { obj[k] = v; });
+                    }
+                    return obj;
+                }
+
                 window.fetch = function() {
                     var id = 'net_' + (++reqCounter);
                     var startTime = Date.now();
                     var url = '';
                     var method = 'GET';
+                    var reqHeaders = {};
 
                     if (typeof arguments[0] === 'string') {
                         url = arguments[0];
                     } else if (arguments[0] instanceof Request) {
                         url = arguments[0].url;
                         method = arguments[0].method || 'GET';
+                        reqHeaders = headersToObj(arguments[0].headers);
                     } else if (arguments[0] instanceof URL) {
                         url = arguments[0].toString();
                     }
 
-                    if (arguments[1] && arguments[1].method) {
-                        method = arguments[1].method;
+                    if (arguments[1]) {
+                        if (arguments[1].method) method = arguments[1].method;
+                        if (arguments[1].headers) {
+                            var h = arguments[1].headers;
+                            if (h instanceof Headers) reqHeaders = headersToObj(h);
+                            else if (typeof h === 'object') reqHeaders = h;
+                        }
                     }
 
                     try {
@@ -865,14 +880,15 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                             requestId: id,
                             method: method.toUpperCase(),
                             url: url,
-                            requestType: 'fetch'
+                            requestType: 'fetch',
+                            requestHeaders: reqHeaders
                         });
                     } catch(e) {}
 
                     return window.__ctxOrigFetch.apply(this, arguments).then(function(response) {
+                        var respHeaders = headersToObj(response.headers);
                         var clone = response.clone();
                         clone.text().then(function(body) {
-                            var size = body ? body.length : 0;
                             try {
                                 window.webkit.messageHandlers.networkMonitor.postMessage({
                                     type: 'requestComplete',
@@ -880,7 +896,9 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                                     status: response.status,
                                     statusText: response.statusText,
                                     duration: (Date.now() - startTime) / 1000.0,
-                                    responseSize: size
+                                    responseSize: body ? body.length : 0,
+                                    responseHeaders: respHeaders,
+                                    responseBody: body ? body.substring(0, 2000) : ''
                                 });
                             } catch(e) {}
                         }).catch(function() {
@@ -891,7 +909,8 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                                     status: response.status,
                                     statusText: response.statusText,
                                     duration: (Date.now() - startTime) / 1000.0,
-                                    responseSize: 0
+                                    responseSize: 0,
+                                    responseHeaders: respHeaders
                                 });
                             } catch(e) {}
                         });
@@ -908,7 +927,6 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                     });
                 };
 
-                // Wrap XMLHttpRequest
                 XMLHttpRequest.prototype.open = function(method, url) {
                     this.__ctxMethod = method;
                     this.__ctxUrl = typeof url === 'string' ? url : (url ? url.toString() : '');
@@ -932,15 +950,29 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
 
                     xhr.addEventListener('loadend', function() {
                         try {
+                            var body = '';
                             var size = 0;
-                            try { size = xhr.responseText ? xhr.responseText.length : 0; } catch(e) {}
+                            try {
+                                body = xhr.responseText || '';
+                                size = body.length;
+                            } catch(e) {}
+                            var respHeaders = {};
+                            try {
+                                var raw = xhr.getAllResponseHeaders() || '';
+                                raw.split('\\r\\n').forEach(function(line) {
+                                    var idx = line.indexOf(': ');
+                                    if (idx > 0) respHeaders[line.substring(0, idx)] = line.substring(idx + 2);
+                                });
+                            } catch(e) {}
                             window.webkit.messageHandlers.networkMonitor.postMessage({
                                 type: 'requestComplete',
                                 requestId: id,
                                 status: xhr.status,
                                 statusText: xhr.statusText,
                                 duration: (Date.now() - startTime) / 1000.0,
-                                responseSize: size
+                                responseSize: size,
+                                responseHeaders: respHeaders,
+                                responseBody: body.substring(0, 2000)
                             });
                         } catch(e) {}
                     });
@@ -948,9 +980,7 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                     xhr.addEventListener('error', function() {
                         try {
                             window.webkit.messageHandlers.networkMonitor.postMessage({
-                                type: 'requestError',
-                                requestId: id,
-                                error: 'Network error'
+                                type: 'requestError', requestId: id, error: 'Network error'
                             });
                         } catch(e) {}
                     });
@@ -958,9 +988,7 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                     xhr.addEventListener('abort', function() {
                         try {
                             window.webkit.messageHandlers.networkMonitor.postMessage({
-                                type: 'requestError',
-                                requestId: id,
-                                error: 'Request aborted'
+                                type: 'requestError', requestId: id, error: 'Request aborted'
                             });
                         } catch(e) {}
                     });
@@ -968,9 +996,7 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                     xhr.addEventListener('timeout', function() {
                         try {
                             window.webkit.messageHandlers.networkMonitor.postMessage({
-                                type: 'requestError',
-                                requestId: id,
-                                error: 'Request timed out'
+                                type: 'requestError', requestId: id, error: 'Request timed out'
                             });
                         } catch(e) {}
                     });
@@ -979,6 +1005,13 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                 };
             })();
         """
+
+        // Use WKUserScript so the injection persists across page navigations
+        let script = WKUserScript(source: js, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        networkMonitorScript = script
+        webView.configuration.userContentController.addUserScript(script)
+
+        // Also inject into the current page immediately
         webView.evaluateJavaScript(js) { _, _ in }
     }
 
@@ -986,6 +1019,17 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
     @MainActor
     func stopNetworkMonitor() {
         isNetworkMonitorActive = false
+
+        // Remove the persistent user script
+        if let script = networkMonitorScript {
+            let controller = webView.configuration.userContentController
+            let remaining = controller.userScripts.filter { $0 !== script }
+            controller.removeAllUserScripts()
+            for s in remaining { controller.addUserScript(s) }
+            networkMonitorScript = nil
+        }
+
+        // Clean up in the current page
         let js = """
             (function() {
                 if (window.__ctxOrigFetch) { window.fetch = window.__ctxOrigFetch; delete window.__ctxOrigFetch; }
@@ -1451,12 +1495,14 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                           let requestType = body["requestType"] as? String
                     else { return }
 
+                    let reqHeaders = body["requestHeaders"] as? [String: String]
                     let entry = NetworkRequestEntry(
                         id: requestId,
                         method: method,
                         url: url,
                         type: NetworkRequestEntry.RequestType(rawValue: requestType) ?? .fetch,
-                        startTime: Date()
+                        startTime: Date(),
+                        requestHeaders: reqHeaders
                     )
                     self.networkRequests.append(entry)
 
@@ -1472,6 +1518,8 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                         self.networkRequests[index].statusText = body["statusText"] as? String
                         self.networkRequests[index].duration = body["duration"] as? TimeInterval
                         self.networkRequests[index].responseSize = body["responseSize"] as? Int
+                        self.networkRequests[index].responseHeaders = body["responseHeaders"] as? [String: String]
+                        self.networkRequests[index].responseBody = body["responseBody"] as? String
                         self.networkRequests[index].isComplete = true
                     }
 

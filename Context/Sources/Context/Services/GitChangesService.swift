@@ -136,7 +136,7 @@ class GitChangesService: ObservableObject {
 
     func unstageAll() {
         guard let path = projectPath else { return }
-        _ = Self.runGit(["reset", "HEAD"], at: path)
+        _ = Self.runGit(["restore", "--staged", "."], at: path)
         Task { await refresh() }
     }
 
@@ -169,7 +169,14 @@ class GitChangesService: ObservableObject {
 
             let indexChar = line[line.startIndex]
             let workTreeChar = line[line.index(after: line.startIndex)]
-            let filePath = String(line.dropFirst(3))
+            let rawPath = String(line.dropFirst(3))
+            // Renamed/copied files show "old -> new"; use the new path for display and stage/unstage
+            let filePath: String
+            if rawPath.contains(" -> ") {
+                filePath = String(rawPath.split(separator: " -> ", maxSplits: 1).last ?? Substring(rawPath))
+            } else {
+                filePath = rawPath
+            }
 
             // Untracked files: "?? path"
             if indexChar == "?" && workTreeChar == "?" {
@@ -208,7 +215,7 @@ class GitChangesService: ObservableObject {
     }
 
     nonisolated static func parseGitLog(at path: String) -> [GitLogEntry] {
-        guard let output = runGit(["log", "--oneline", "--format=%h|%s|%an|%ar", "-15"], at: path) else {
+        guard let output = runGit(["log", "--format=%h|%s|%an|%ar", "-15"], at: path) else {
             return []
         }
 
