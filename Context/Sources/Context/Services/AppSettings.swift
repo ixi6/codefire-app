@@ -38,6 +38,14 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(preferredCLI.rawValue, forKey: "preferredCLI") }
     }
 
+    // Notifications
+    @Published var notifyOnNewEmail: Bool {
+        didSet { UserDefaults.standard.set(notifyOnNewEmail, forKey: "notifyOnNewEmail") }
+    }
+    @Published var notifyOnClaudeDone: Bool {
+        didSet { UserDefaults.standard.set(notifyOnClaudeDone, forKey: "notifyOnClaudeDone") }
+    }
+
     // Briefing
     @Published var briefingStalenessHours: Double {
         didSet { UserDefaults.standard.set(briefingStalenessHours, forKey: "briefingStalenessHours") }
@@ -71,6 +79,9 @@ class AppSettings: ObservableObject {
         self.contextSearchEnabled = defaults.object(forKey: "contextSearchEnabled") as? Bool ?? true
         self.embeddingModel = defaults.string(forKey: "embeddingModel") ?? "openai/text-embedding-3-small"
         self.preferredCLI = CLIProvider(rawValue: defaults.string(forKey: "preferredCLI") ?? "") ?? .claude
+
+        self.notifyOnNewEmail = defaults.object(forKey: "notifyOnNewEmail") as? Bool ?? true
+        self.notifyOnClaudeDone = defaults.object(forKey: "notifyOnClaudeDone") as? Bool ?? true
 
         self.briefingStalenessHours = defaults.object(forKey: "briefingStalenessHours") as? Double ?? 6.0
 

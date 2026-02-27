@@ -152,6 +152,22 @@ class GitHubService: ObservableObject {
         lastRefresh = nil
     }
 
+    /// Pause polling without losing state. Used when the project window loses focus.
+    func pauseMonitoring() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    /// Resume polling after a pause. Re-creates the timer if we have a project path.
+    func resumeMonitoring() {
+        guard timer == nil, projectPath != nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                await self?.refresh()
+            }
+        }
+    }
+
     func refresh() async {
         guard let path = projectPath else { return }
         isLoading = true

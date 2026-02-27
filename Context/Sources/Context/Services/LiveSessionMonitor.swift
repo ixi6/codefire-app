@@ -129,6 +129,23 @@ class LiveSessionMonitor: ObservableObject {
         state = LiveSessionState()
     }
 
+    /// Pause polling without losing state. Used when the project window loses focus.
+    func pauseMonitoring() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+    }
+
+    /// Resume polling after a pause. Re-creates the timer if we have a path to watch.
+    func resumeMonitoring() {
+        guard pollTimer == nil, claudeProjectPath != nil else { return }
+        poll()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.poll()
+            }
+        }
+    }
+
     // MARK: - Polling
 
     private func poll() {

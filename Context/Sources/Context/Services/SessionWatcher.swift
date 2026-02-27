@@ -8,6 +8,8 @@ extension Notification.Name {
     static let tasksDidChange = Notification.Name("tasksDidChange")
     /// Posted when Gmail sync has completed with new data.
     static let gmailDidSync = Notification.Name("gmailDidSync")
+    /// Posted when a Claude Code process exits (transitions from running to not-running).
+    static let claudeProcessDidExit = Notification.Name("claudeProcessDidExit")
 }
 
 @MainActor

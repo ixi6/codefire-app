@@ -76,8 +76,14 @@ class AgentMonitor: ObservableObject {
             guard let self, self.shellPid > 0 else { return }
             let (claude, agents) = self.scan()
             DispatchQueue.main.async {
+                let wasRunning = self.claudeProcess != nil
                 self.claudeProcess = claude
                 self.agents = agents
+
+                // Detect claude process exit: was running, now gone
+                if wasRunning && claude == nil {
+                    NotificationCenter.default.post(name: .claudeProcessDidExit, object: nil)
+                }
             }
         }
     }

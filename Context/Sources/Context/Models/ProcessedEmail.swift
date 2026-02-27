@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-struct ProcessedEmail: Codable, Identifiable, FetchableRecord, MutablePersistableRecord {
+struct ProcessedEmail: Codable, Identifiable, Equatable, FetchableRecord, MutablePersistableRecord {
     var id: Int64?
     var gmailMessageId: String
     var gmailThreadId: String

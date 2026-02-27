@@ -57,6 +57,11 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
     private static let maxLogEntries = 500
     private var observations: [NSKeyValueObservation] = []
 
+    /// The last known URL before this tab was unloaded, used to reload on demand.
+    private(set) var lastKnownURL: URL?
+    /// Whether this tab's web content has been unloaded to save memory.
+    @Published var isUnloaded: Bool = false
+
     /// When set, subsequent JS execution targets this iframe instead of the main frame.
     var activeIframeRef: String?
 
@@ -78,6 +83,22 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
 
     func clearConsoleLogs() {
         consoleLogs.removeAll()
+    }
+
+    /// Unload page content to free memory. Preserves the URL so it can be reloaded later.
+    /// The WKWebView instance stays alive (cookies/session intact), but the heavy DOM is released.
+    func unloadWebView() {
+        guard !isUnloaded else { return }
+        lastKnownURL = webView.url
+        webView.loadHTMLString("", baseURL: nil)
+        isUnloaded = true
+    }
+
+    /// Reload the previously loaded page after it was unloaded.
+    func reloadIfNeeded() {
+        guard isUnloaded, let url = lastKnownURL else { return }
+        webView.load(URLRequest(url: url))
+        isUnloaded = false
     }
 
     override init() {

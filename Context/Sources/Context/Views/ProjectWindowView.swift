@@ -2,21 +2,25 @@ import SwiftUI
 
 /// Self-contained root view for project-specific windows.
 ///
-/// Each project window creates its own instances of all per-project services
-/// so multiple projects can run independently and simultaneously.
+/// Per-project services (SessionWatcher, LiveSessionMonitor, etc.) are created per window.
+/// App-level services (AppSettings, BriefingService, ClaudeService) are shared via SharedServices
+/// to avoid duplicating memory for every open project window.
 struct ProjectWindowView: View {
     let projectId: String
 
+    // App-level services — shared across all windows
+    private var appSettings: AppSettings { SharedServices.shared.appSettings }
+    private var briefingService: BriefingService { SharedServices.shared.briefingService }
+    private var claudeService: ClaudeService { SharedServices.shared.claudeService }
+
+    // Per-window services — legitimately per-project
     @StateObject private var appState = AppState()
-    @StateObject private var appSettings = AppSettings()
     @StateObject private var sessionWatcher = SessionWatcher()
     @StateObject private var liveMonitor = LiveSessionMonitor()
     @StateObject private var devEnvironment = DevEnvironment()
     @StateObject private var projectAnalyzer = ProjectAnalyzer()
-    @StateObject private var claudeService = ClaudeService()
     @StateObject private var githubService = GitHubService()
     @StateObject private var contextEngine = ContextEngine()
-    @StateObject private var briefingService = BriefingService()
 
     @State private var projectPath: String = ""
     @State private var project: Project?
@@ -62,6 +66,14 @@ struct ProjectWindowView: View {
             sessionWatcher.stopWatching()
             githubService.stopMonitoring()
             contextEngine.stopWatching()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+            liveMonitor.pauseMonitoring()
+            githubService.pauseMonitoring()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            liveMonitor.resumeMonitoring()
+            githubService.resumeMonitoring()
         }
     }
 

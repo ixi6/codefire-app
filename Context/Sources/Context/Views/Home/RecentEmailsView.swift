@@ -17,6 +17,10 @@ struct RecentEmailsView: View {
         ("6h", 6), ("12h", 12), ("24h", 24), ("48h", 48), ("7d", 168),
     ]
 
+    private var unreadCount: Int {
+        emails.filter { !$0.isRead }.count
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
@@ -63,6 +67,9 @@ struct RecentEmailsView: View {
         .background(Color(nsColor: .underPageBackgroundColor).opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .onAppear { loadData() }
+        .onChange(of: selectedEmail) { _, newValue in
+            if newValue == nil { loadData() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .gmailDidSync)) { _ in
             loadData()
         }
@@ -80,6 +87,15 @@ struct RecentEmailsView: View {
                 .foregroundColor(.green)
             Text("Recent Emails")
                 .font(.system(size: 12, weight: .semibold))
+
+            if unreadCount > 0 {
+                Text("\(unreadCount)")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.accentColor, in: Capsule())
+            }
 
             Spacer()
 
@@ -266,14 +282,23 @@ struct RecentEmailsView: View {
 
     @ViewBuilder
     private func emailRow(_ email: ProcessedEmail) -> some View {
+        let isUnread = !email.isRead
+
         Button {
             selectedEmail = email
         } label: {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
+                    // Unread indicator dot
+                    if isUnread {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 6, height: 6)
+                    }
+
                     Text(email.fromName ?? email.fromAddress)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .font(.system(size: 11, weight: isUnread ? .semibold : .regular))
+                        .foregroundColor(isUnread ? .primary : .secondary)
                         .lineLimit(1)
 
                     // Client badge
@@ -316,14 +341,14 @@ struct RecentEmailsView: View {
                 }
 
                 Text(email.subject)
-                    .font(.system(size: 11))
-                    .foregroundColor(.primary.opacity(0.85))
+                    .font(.system(size: 11, weight: isUnread ? .medium : .regular))
+                    .foregroundColor(isUnread ? .primary.opacity(0.85) : .secondary)
                     .lineLimit(1)
 
                 if let snippet = email.snippet, !snippet.isEmpty {
                     Text(snippet)
                         .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(isUnread ? .tertiary : .quaternary)
                         .lineLimit(1)
                 }
             }
@@ -534,6 +559,12 @@ private struct EmailDetailView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+        }
+        .onAppear {
+            guard let emailId = email.id, !email.isRead else { return }
+            try? DatabaseService.shared.dbQueue.write { db in
+                try db.execute(sql: "UPDATE processedEmails SET isRead = 1 WHERE id = ?", arguments: [emailId])
+            }
         }
     }
 

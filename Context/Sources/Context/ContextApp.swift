@@ -49,7 +49,7 @@ struct ContextApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     @StateObject private var appState = AppState()
-    @StateObject private var appSettings = AppSettings()
+    @StateObject private var appSettings: AppSettings
     @StateObject private var sessionWatcher = SessionWatcher()
     @StateObject private var liveMonitor = LiveSessionMonitor()
     @StateObject private var devEnvironment = DevEnvironment()
@@ -60,6 +60,7 @@ struct ContextApp: App {
     @StateObject private var gmailPoller: GmailPoller
     @StateObject private var contextEngine = ContextEngine()
     @StateObject private var briefingService = BriefingService()
+    @StateObject private var notificationService: SystemNotificationService
 
     init() {
         // Register as a foreground GUI app. Without this, a bare SPM executable
@@ -69,7 +70,15 @@ struct ContextApp: App {
 
         let oauth = GoogleOAuthManager()
         _oauthManager = StateObject(wrappedValue: oauth)
-        _gmailPoller = StateObject(wrappedValue: GmailPoller(oauthManager: oauth))
+        let poller = GmailPoller(oauthManager: oauth)
+        _gmailPoller = StateObject(wrappedValue: poller)
+
+        let settings = AppSettings()
+        _appSettings = StateObject(wrappedValue: settings)
+        _notificationService = StateObject(wrappedValue: SystemNotificationService(
+            settings: settings,
+            gmailPoller: poller
+        ))
 
         do {
             try DatabaseService.shared.setup()
@@ -130,6 +139,8 @@ struct ContextApp: App {
                         gmailPoller.startPolling(interval: appSettings.gmailSyncInterval)
                     }
                     contextEngine.startPollingForRequests()
+                    notificationService.observeGmailPoller()
+                    notificationService.observeClaudeExitNotifications()
                     Task {
                         await briefingService.checkAndGenerate(settings: appSettings)
                     }

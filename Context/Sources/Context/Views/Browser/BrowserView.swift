@@ -46,17 +46,12 @@ struct BrowserView: View {
                 .fill(Color(nsColor: .separatorColor).opacity(0.5))
                 .frame(height: 1)
 
-            // Web content ZStack — all tabs stay alive, only the active one is visible
-            ZStack {
-                ForEach(viewModel.tabs) { tab in
-                    let isActive = tab.id == viewModel.activeTabId
-                    WebViewWrapper(webView: tab.webView)
-                        .opacity(isActive ? 1 : 0)
-                        .allowsHitTesting(isActive)
-                }
-            }
-            .overlay {
-                if viewModel.tabs.isEmpty {
+            // Web content — only the active tab's WKWebView is rendered.
+            // Inactive tabs are unloaded (blank HTML) to free memory.
+            Group {
+                if let activeTab = viewModel.activeTab {
+                    WebViewWrapper(webView: activeTab.webView)
+                } else {
                     VStack(spacing: 8) {
                         Image(systemName: "globe")
                             .font(.system(size: 24))
@@ -65,6 +60,7 @@ struct BrowserView: View {
                             .font(.system(size: 12))
                             .foregroundStyle(.tertiary)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
 
@@ -74,7 +70,15 @@ struct BrowserView: View {
                 ScreenshotGalleryStrip(projectId: projectId)
             }
         }
-        .onChange(of: viewModel.activeTabId) { _, _ in
+        .onChange(of: viewModel.activeTabId) { oldId, newId in
+            // Unload the previously active tab to free memory
+            if let oldId, let oldTab = viewModel.tabs.first(where: { $0.id == oldId }) {
+                oldTab.unloadWebView()
+            }
+            // Reload the newly active tab if it was unloaded
+            if let newId, let newTab = viewModel.tabs.first(where: { $0.id == newId }) {
+                newTab.reloadIfNeeded()
+            }
             syncURLBar()
         }
         .onReceive(viewModel.objectWillChange) { _ in

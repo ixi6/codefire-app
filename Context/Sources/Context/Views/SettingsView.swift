@@ -42,6 +42,11 @@ private struct GeneralSettingsTab: View {
 
     var body: some View {
         Form {
+            Section("Notifications") {
+                Toggle("Notify when new emails arrive", isOn: $settings.notifyOnNewEmail)
+                Toggle("Notify when Claude finishes", isOn: $settings.notifyOnClaudeDone)
+            }
+
             Section("Preferred CLI") {
                 Picker("Default coding CLI", selection: $settings.preferredCLI) {
                     ForEach(CLIProvider.allCases) { cli in
