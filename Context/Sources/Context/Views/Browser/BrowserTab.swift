@@ -53,6 +53,10 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
     @Published var canGoBack: Bool = false
     @Published var canGoForward: Bool = false
     @Published var consoleLogs: [ConsoleLogEntry] = []
+    @Published var inspectedElement: InspectedElement?
+    @Published var inspectedStyles: ComputedStyles?
+    @Published var inspectedBoxModel: BoxModelData?
+    @Published var isElementPickerActive = false
 
     private static let maxLogEntries = 500
     private var observations: [NSKeyValueObservation] = []
@@ -138,8 +142,9 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
         self.webView = WKWebView(frame: .zero, configuration: config)
         super.init()
 
-        // Register message handler via weak proxy
+        // Register message handlers via weak proxy
         config.userContentController.add(WeakScriptMessageHandler(delegate: self), name: "consoleLog")
+        config.userContentController.add(WeakScriptMessageHandler(delegate: self), name: "devtools")
 
         observations = [
             webView.observe(\.title) { [weak self] wv, _ in
@@ -162,6 +167,7 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
 
     deinit {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "consoleLog")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "devtools")
     }
 
     func navigate(to urlString: String) {
@@ -809,6 +815,262 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
         return (fileURL.path, Int(image.size.width), Int(image.size.height))
     }
 
+    // MARK: - DevTools Element Picker
+
+    /// Inject an overlay that highlights hovered elements and captures clicks.
+    @MainActor
+    func startElementPicker() {
+        isElementPickerActive = true
+        let js = """
+            (function() {
+                if (document.getElementById('__ctx_devtools_overlay')) return;
+                const overlay = document.createElement('div');
+                overlay.id = '__ctx_devtools_overlay';
+                overlay.style.cssText = 'position:fixed;pointer-events:none;border:2px solid #2196F3;background:rgba(33,150,243,0.1);z-index:2147483647;display:none;transition:none;';
+                document.body.appendChild(overlay);
+
+                function getSelector(el) {
+                    if (el.id) return '#' + CSS.escape(el.id);
+                    const parts = [];
+                    let cur = el;
+                    while (cur && cur !== document.body && cur !== document.documentElement) {
+                        let seg = cur.tagName.toLowerCase();
+                        if (cur.id) { parts.unshift('#' + CSS.escape(cur.id)); break; }
+                        const parent = cur.parentElement;
+                        if (parent) {
+                            const siblings = Array.from(parent.children).filter(c => c.tagName === cur.tagName);
+                            if (siblings.length > 1) {
+                                const idx = siblings.indexOf(cur) + 1;
+                                seg += ':nth-of-type(' + idx + ')';
+                            }
+                        }
+                        parts.unshift(seg);
+                        cur = parent;
+                    }
+                    return parts.join(' > ');
+                }
+
+                function onMove(e) {
+                    const el = document.elementFromPoint(e.clientX, e.clientY);
+                    if (!el || el === overlay) { overlay.style.display = 'none'; return; }
+                    const r = el.getBoundingClientRect();
+                    overlay.style.top = r.top + 'px';
+                    overlay.style.left = r.left + 'px';
+                    overlay.style.width = r.width + 'px';
+                    overlay.style.height = r.height + 'px';
+                    overlay.style.display = 'block';
+                }
+
+                function onClick(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    const el = document.elementFromPoint(e.clientX, e.clientY);
+                    if (!el || el === overlay) return;
+
+                    const r = el.getBoundingClientRect();
+                    const attrs = {};
+                    for (const a of el.attributes) { attrs[a.name] = a.value; }
+
+                    const children = Array.from(el.children).slice(0, 20).map(c => ({
+                        tagName: c.tagName.toLowerCase(),
+                        elementId: c.id || null,
+                        classes: Array.from(c.classList),
+                        selector: getSelector(c)
+                    }));
+
+                    let parentInfo = null;
+                    if (el.parentElement && el.parentElement !== document.body) {
+                        const p = el.parentElement;
+                        parentInfo = {
+                            tagName: p.tagName.toLowerCase(),
+                            elementId: p.id || null,
+                            classes: Array.from(p.classList),
+                            selector: getSelector(p)
+                        };
+                    }
+
+                    window.webkit.messageHandlers.devtools.postMessage({
+                        type: 'elementSelected',
+                        tagName: el.tagName.toLowerCase(),
+                        id: el.id || null,
+                        classes: Array.from(el.classList),
+                        attributes: attrs,
+                        axRef: el.getAttribute('data-ax-ref') || null,
+                        selector: getSelector(el),
+                        rect: { x: r.x, y: r.y, width: r.width, height: r.height },
+                        children: children,
+                        parent: parentInfo
+                    });
+
+                    // Clean up
+                    document.removeEventListener('mousemove', onMove, true);
+                    document.removeEventListener('click', onClick, true);
+                    overlay.style.display = 'none';
+                }
+
+                document.addEventListener('mousemove', onMove, true);
+                document.addEventListener('click', onClick, true);
+            })();
+        """
+        webView.callAsyncJavaScript(js, arguments: [:], in: nil, in: .defaultClient) { _ in }
+    }
+
+    /// Remove the picker overlay and stop listening.
+    @MainActor
+    func stopElementPicker() {
+        isElementPickerActive = false
+        let js = """
+            (function() {
+                const overlay = document.getElementById('__ctx_devtools_overlay');
+                if (overlay) overlay.remove();
+            })();
+        """
+        webView.callAsyncJavaScript(js, arguments: [:], in: nil, in: .defaultClient) { _ in }
+    }
+
+    /// Fetch computed styles for the element matching the given CSS selector.
+    @MainActor
+    func fetchComputedStyles(selector: String) async -> ComputedStyles? {
+        let js = """
+            const el = document.querySelector(selector);
+            if (!el) return null;
+            const cs = window.getComputedStyle(el);
+
+            const typoProps = ['font-family','font-size','font-weight','font-style','line-height',
+                'letter-spacing','text-align','text-decoration','text-transform','white-space','word-spacing'];
+            const layoutProps = ['display','position','float','clear','overflow','overflow-x','overflow-y',
+                'box-sizing','flex-direction','flex-wrap','justify-content','align-items','align-self',
+                'grid-template-columns','grid-template-rows','gap'];
+            const spacingProps = ['padding-top','padding-right','padding-bottom','padding-left',
+                'margin-top','margin-right','margin-bottom','margin-left','width','height',
+                'min-width','min-height','max-width','max-height','top','right','bottom','left'];
+            const colorProps = ['color','background-color','background','opacity'];
+            const borderProps = ['border-top','border-right','border-bottom','border-left',
+                'border-radius','outline','box-shadow'];
+
+            function gather(props) { return props.map(p => [p, cs.getPropertyValue(p)]).filter(([,v]) => v && v !== 'none' && v !== 'normal' && v !== 'auto' && v !== '0px'); }
+
+            const allKnown = new Set([...typoProps,...layoutProps,...spacingProps,...colorProps,...borderProps]);
+            const other = [];
+            for (let i = 0; i < cs.length; i++) {
+                const p = cs[i];
+                if (!allKnown.has(p)) {
+                    const v = cs.getPropertyValue(p);
+                    if (v && v !== 'none' && v !== 'normal' && v !== 'auto' && v !== '0px' && v !== 'initial' && v !== 'inherit') {
+                        other.push([p, v]);
+                    }
+                }
+            }
+
+            return {
+                typography: gather(typoProps),
+                layout: gather(layoutProps),
+                spacing: gather(spacingProps),
+                colors: gather(colorProps),
+                border: gather(borderProps),
+                other: other.slice(0, 30)
+            };
+        """
+
+        return await withCheckedContinuation { continuation in
+            webView.callAsyncJavaScript(
+                js,
+                arguments: ["selector": selector],
+                in: nil,
+                in: .defaultClient
+            ) { result in
+                switch result {
+                case .success(let value):
+                    guard let dict = value as? [String: Any] else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    func parsePairs(_ key: String) -> [(String, String)] {
+                        guard let arr = dict[key] as? [[Any]] else { return [] }
+                        return arr.compactMap { pair in
+                            guard pair.count == 2,
+                                  let k = pair[0] as? String,
+                                  let v = pair[1] as? String else { return nil }
+                            return (k, v)
+                        }
+                    }
+                    let styles = ComputedStyles(
+                        typography: parsePairs("typography"),
+                        layout: parsePairs("layout"),
+                        spacing: parsePairs("spacing"),
+                        colors: parsePairs("colors"),
+                        border: parsePairs("border"),
+                        other: parsePairs("other")
+                    )
+                    continuation.resume(returning: styles)
+                case .failure:
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+
+    /// Fetch box model dimensions for the element matching the given CSS selector.
+    @MainActor
+    func fetchBoxModel(selector: String) async -> BoxModelData? {
+        let js = """
+            const el = document.querySelector(selector);
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            const cs = window.getComputedStyle(el);
+            function pf(v) { return parseFloat(v) || 0; }
+            return {
+                content: { width: r.width, height: r.height },
+                padding: {
+                    top: pf(cs.paddingTop), right: pf(cs.paddingRight),
+                    bottom: pf(cs.paddingBottom), left: pf(cs.paddingLeft)
+                },
+                border: {
+                    top: pf(cs.borderTopWidth), right: pf(cs.borderRightWidth),
+                    bottom: pf(cs.borderBottomWidth), left: pf(cs.borderLeftWidth)
+                },
+                margin: {
+                    top: pf(cs.marginTop), right: pf(cs.marginRight),
+                    bottom: pf(cs.marginBottom), left: pf(cs.marginLeft)
+                }
+            };
+        """
+
+        return await withCheckedContinuation { continuation in
+            webView.callAsyncJavaScript(
+                js,
+                arguments: ["selector": selector],
+                in: nil,
+                in: .defaultClient
+            ) { result in
+                switch result {
+                case .success(let value):
+                    guard let dict = value as? [String: Any],
+                          let content = dict["content"] as? [String: Double],
+                          let padding = dict["padding"] as? [String: Double],
+                          let border = dict["border"] as? [String: Double],
+                          let margin = dict["margin"] as? [String: Double] else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    let box = BoxModelData(
+                        content: (width: content["width"] ?? 0, height: content["height"] ?? 0),
+                        padding: (top: padding["top"] ?? 0, right: padding["right"] ?? 0,
+                                  bottom: padding["bottom"] ?? 0, left: padding["left"] ?? 0),
+                        border: (top: border["top"] ?? 0, right: border["right"] ?? 0,
+                                 bottom: border["bottom"] ?? 0, left: border["left"] ?? 0),
+                        margin: (top: margin["top"] ?? 0, right: margin["right"] ?? 0,
+                                 bottom: margin["bottom"] ?? 0, left: margin["left"] ?? 0)
+                    )
+                    continuation.resume(returning: box)
+                case .failure:
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+
     // MARK: - Accessibility Tree JS
 
     private static let accessibilityTreeJS = """
@@ -911,14 +1173,81 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
     // MARK: - WKScriptMessageHandler
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "consoleLog",
-              let body = message.body as? [String: String],
-              let level = body["level"],
-              let msg = body["message"]
-        else { return }
+        if message.name == "consoleLog" {
+            guard let body = message.body as? [String: String],
+                  let level = body["level"],
+                  let msg = body["message"]
+            else { return }
 
-        DispatchQueue.main.async { [weak self] in
-            self?.addConsoleLog(level: level, message: msg)
+            DispatchQueue.main.async { [weak self] in
+                self?.addConsoleLog(level: level, message: msg)
+            }
+        } else if message.name == "devtools" {
+            guard let body = message.body as? [String: Any],
+                  let type = body["type"] as? String
+            else { return }
+
+            if type == "elementSelected" {
+                let tagName = body["tagName"] as? String ?? "unknown"
+                let elId = body["id"] as? String
+                let classes = body["classes"] as? [String] ?? []
+                let attributes = body["attributes"] as? [String: String] ?? [:]
+                let axRef = body["axRef"] as? String
+                let selector = body["selector"] as? String ?? ""
+
+                var rect = ElementRect(x: 0, y: 0, width: 0, height: 0)
+                if let r = body["rect"] as? [String: Double] {
+                    rect = ElementRect(x: r["x"] ?? 0, y: r["y"] ?? 0, width: r["width"] ?? 0, height: r["height"] ?? 0)
+                }
+
+                var children: [ElementSummary] = []
+                if let childArr = body["children"] as? [[String: Any]] {
+                    children = childArr.map { c in
+                        ElementSummary(
+                            tagName: c["tagName"] as? String ?? "unknown",
+                            elementId: c["elementId"] as? String,
+                            classes: c["classes"] as? [String] ?? [],
+                            selector: c["selector"] as? String ?? ""
+                        )
+                    }
+                }
+
+                var parent: ElementSummary?
+                if let p = body["parent"] as? [String: Any] {
+                    parent = ElementSummary(
+                        tagName: p["tagName"] as? String ?? "unknown",
+                        elementId: p["elementId"] as? String,
+                        classes: p["classes"] as? [String] ?? [],
+                        selector: p["selector"] as? String ?? ""
+                    )
+                }
+
+                let element = InspectedElement(
+                    selector: selector,
+                    tagName: tagName,
+                    id: elId,
+                    classes: classes,
+                    attributes: attributes,
+                    axRef: axRef,
+                    rect: rect,
+                    children: children,
+                    parent: parent
+                )
+
+                DispatchQueue.main.async { [weak self] in
+                    self?.inspectedElement = element
+                    self?.isElementPickerActive = false
+
+                    // Fetch styles and box model asynchronously
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        async let styles = self.fetchComputedStyles(selector: selector)
+                        async let boxModel = self.fetchBoxModel(selector: selector)
+                        self.inspectedStyles = await styles
+                        self.inspectedBoxModel = await boxModel
+                    }
+                }
+            }
         }
     }
 }
