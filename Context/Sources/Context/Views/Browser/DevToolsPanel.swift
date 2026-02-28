@@ -23,11 +23,24 @@ struct DevToolsPanel: View {
     @State private var selectedTab: DevToolsTab = .elements
     @State private var selectedRequestId: String?
     @State private var networkFilter: NetworkFilter = .all
+    @State private var urlSearchText: String = ""
+    @State private var statusFilter: StatusFilter = .any
+    @State private var domainFilter: String?
+
+    enum StatusFilter: String, CaseIterable {
+        case any = "Any"
+        case s2xx = "2xx"
+        case s3xx = "3xx"
+        case s4xx = "4xx"
+        case s5xx = "5xx"
+        case error = "Err"
+    }
 
     enum NetworkFilter: String, CaseIterable {
         case all = "All"
         case fetch = "Fetch"
         case xhr = "XHR"
+        case ws = "WS"
     }
 
     var body: some View {
@@ -531,12 +544,62 @@ struct DevToolsPanel: View {
 
     // MARK: - Network Tab
 
-    private var filteredRequests: [NetworkRequestEntry] {
-        switch networkFilter {
-        case .all: return tab.networkRequests
-        case .fetch: return tab.networkRequests.filter { $0.type == .fetch }
-        case .xhr: return tab.networkRequests.filter { $0.type == .xhr }
+    private var uniqueDomains: [String] {
+        Array(Set(tab.networkRequests.compactMap { URL(string: $0.url)?.host })).sorted()
+    }
+
+    private func buildCurlCommand(_ request: NetworkRequestEntry) -> String {
+        var parts = ["curl"]
+        if request.method != "GET" {
+            parts.append("-X \(request.method)")
         }
+        parts.append("'\(request.url)'")
+        if let headers = request.requestHeaders {
+            for (key, value) in headers.sorted(by: { $0.key < $1.key }) {
+                parts.append("-H '\(key): \(value)'")
+            }
+        }
+        if let body = request.requestBody, !body.isEmpty {
+            let escaped = body.replacingOccurrences(of: "'", with: "'\\''")
+            parts.append("-d '\(escaped)'")
+        }
+        return parts.joined(separator: " \\\n  ")
+    }
+
+    private var filteredRequests: [NetworkRequestEntry] {
+        var requests: [NetworkRequestEntry]
+        switch networkFilter {
+        case .all: requests = tab.networkRequests
+        case .fetch: requests = tab.networkRequests.filter { $0.type == .fetch }
+        case .xhr: requests = tab.networkRequests.filter { $0.type == .xhr }
+        case .ws: requests = tab.networkRequests.filter { $0.type == .websocket }
+        }
+
+        // Apply URL search filter
+        if !urlSearchText.isEmpty {
+            requests = requests.filter { $0.url.localizedCaseInsensitiveContains(urlSearchText) }
+        }
+
+        // Apply status filter
+        if statusFilter != .any {
+            requests = requests.filter {
+                switch statusFilter {
+                case .any: return true
+                case .s2xx: return $0.status.map { (200..<300).contains($0) } ?? false
+                case .s3xx: return $0.status.map { (300..<400).contains($0) } ?? false
+                case .s4xx: return $0.status.map { (400..<500).contains($0) } ?? false
+                case .s5xx: return $0.status.map { (500..<600).contains($0) } ?? false
+                case .error: return $0.isError
+                }
+            }
+        }
+
+        // Apply domain filter
+        if let domainFilter, !domainFilter.isEmpty {
+            requests = requests.filter { $0.domain == domainFilter }
+        }
+
+        return requests
     }
 
     private var networkTab: some View {
@@ -609,7 +672,60 @@ struct DevToolsPanel: View {
                 }
             }
             .pickerStyle(.segmented)
-            .frame(width: 140)
+            .frame(width: 180)
+
+            // URL search
+            TextField("Filter URL...", text: $urlSearchText)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 10))
+                .frame(maxWidth: 140)
+
+            // Status filter
+            Menu {
+                ForEach(StatusFilter.allCases, id: \.self) { filter in
+                    Button(filter.rawValue) { statusFilter = filter }
+                }
+            } label: {
+                HStack(spacing: 2) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 10))
+                    Text(statusFilter == .any ? "Status" : statusFilter.rawValue)
+                        .font(.system(size: 10))
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(statusFilter != .any ? Color.accentColor.opacity(0.15) : Color.clear)
+                )
+            }
+            .menuStyle(.borderlessButton)
+            .frame(width: 60)
+
+            // Domain filter
+            Menu {
+                Button("Any domain") { domainFilter = nil }
+                Divider()
+                ForEach(uniqueDomains, id: \.self) { domain in
+                    Button(domain) { domainFilter = domain }
+                }
+            } label: {
+                HStack(spacing: 2) {
+                    Image(systemName: "globe")
+                        .font(.system(size: 10))
+                    Text(domainFilter ?? "Domain")
+                        .font(.system(size: 10))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(domainFilter != nil ? Color.accentColor.opacity(0.15) : Color.clear)
+                )
+            }
+            .menuStyle(.borderlessButton)
+            .frame(maxWidth: 100)
 
             Spacer()
 
@@ -746,6 +862,18 @@ struct DevToolsPanel: View {
                     headersView(headers)
                 }
 
+                // Request body
+                if let reqBody = request.requestBody, !reqBody.isEmpty {
+                    Divider()
+                    sectionHeader("Request Body")
+                    Text(prettyPrintJSON(reqBody))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .lineLimit(30)
+                        .padding(.horizontal, 12)
+                }
+
                 // Response headers
                 if let headers = request.responseHeaders, !headers.isEmpty {
                     Divider()
@@ -757,13 +885,66 @@ struct DevToolsPanel: View {
                 if let body = request.responseBody, !body.isEmpty {
                     Divider()
                     sectionHeader("Response Body")
-                    let preview = body.count > 2000 ? String(body.prefix(2000)) + "\n... (truncated)" : body
+                    let preview = prettyPrintJSON(body)
                     Text(preview)
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                         .lineLimit(50)
                         .padding(.horizontal, 12)
+                }
+
+                // WebSocket messages
+                if let wsMessages = request.webSocketMessages, !wsMessages.isEmpty {
+                    Divider()
+                    sectionHeader("WebSocket Messages (\(wsMessages.count))")
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(wsMessages) { msg in
+                            HStack(spacing: 6) {
+                                Image(systemName: msg.direction == .sent ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(msg.direction == .sent ? .blue : .green)
+                                Text(msg.timestamp, style: .time)
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                                Text(msg.data)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                }
+
+                // Copy as cURL
+                if request.type != .websocket {
+                    Divider()
+                    HStack {
+                        Spacer()
+                        Button {
+                            let curl = buildCurlCommand(request)
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(curl, forType: .string)
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.system(size: 9))
+                                Text("Copy as cURL")
+                                    .font(.system(size: 10))
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color(nsColor: .controlBackgroundColor))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 12)
                 }
             }
             .padding(.vertical, 8)
@@ -803,6 +984,15 @@ struct DevToolsPanel: View {
     }
 
     // MARK: - Shared Components
+
+    private func prettyPrintJSON(_ text: String) -> String {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data),
+              let pretty = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]),
+              let result = String(data: pretty, encoding: .utf8)
+        else { return text }
+        return result
+    }
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)

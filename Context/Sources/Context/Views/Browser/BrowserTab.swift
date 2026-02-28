@@ -869,11 +869,14 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
     func startNetworkMonitor() {
         isNetworkMonitorActive = true
 
+        let bodyLimit = UserDefaults.standard.object(forKey: "networkBodyLimit") as? Int ?? 51200
+
         let js = """
             (function() {
                 if (window.__ctxNetworkMonitorActive) return;
                 window.__ctxNetworkMonitorActive = true;
                 var reqCounter = 0;
+                var __ctxBodyLimit = \(bodyLimit);
 
                 window.__ctxOrigFetch = window.fetch;
                 window.__ctxOrigXHROpen = XMLHttpRequest.prototype.open;
@@ -904,12 +907,24 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                         url = arguments[0].toString();
                     }
 
+                    var reqBody = '';
                     if (arguments[1]) {
                         if (arguments[1].method) method = arguments[1].method;
                         if (arguments[1].headers) {
                             var h = arguments[1].headers;
                             if (h instanceof Headers) reqHeaders = headersToObj(h);
                             else if (typeof h === 'object') reqHeaders = h;
+                        }
+                        if (arguments[1].body) {
+                            try {
+                                if (typeof arguments[1].body === 'string') {
+                                    reqBody = arguments[1].body.substring(0, __ctxBodyLimit);
+                                } else if (arguments[1].body instanceof URLSearchParams) {
+                                    reqBody = arguments[1].body.toString().substring(0, __ctxBodyLimit);
+                                } else if (typeof arguments[1].body === 'object') {
+                                    reqBody = JSON.stringify(arguments[1].body).substring(0, __ctxBodyLimit);
+                                }
+                            } catch(e) {}
                         }
                     }
 
@@ -920,7 +935,8 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                             method: method.toUpperCase(),
                             url: url,
                             requestType: 'fetch',
-                            requestHeaders: reqHeaders
+                            requestHeaders: reqHeaders,
+                            requestBody: reqBody
                         });
                     } catch(e) {}
 
@@ -937,7 +953,7 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                                     duration: (Date.now() - startTime) / 1000.0,
                                     responseSize: body ? body.length : 0,
                                     responseHeaders: respHeaders,
-                                    responseBody: body ? body.substring(0, 2000) : ''
+                                    responseBody: body ? body.substring(0, __ctxBodyLimit) : ''
                                 });
                             } catch(e) {}
                         }).catch(function() {
@@ -972,10 +988,18 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                     return window.__ctxOrigXHROpen.apply(this, arguments);
                 };
 
-                XMLHttpRequest.prototype.send = function() {
+                XMLHttpRequest.prototype.send = function(data) {
                     var xhr = this;
                     var id = 'net_' + (++reqCounter);
                     var startTime = Date.now();
+                    var reqBody = '';
+                    if (data) {
+                        try {
+                            if (typeof data === 'string') reqBody = data.substring(0, __ctxBodyLimit);
+                            else if (data instanceof URLSearchParams) reqBody = data.toString().substring(0, __ctxBodyLimit);
+                            else if (typeof data === 'object') reqBody = JSON.stringify(data).substring(0, __ctxBodyLimit);
+                        } catch(e) {}
+                    }
 
                     try {
                         window.webkit.messageHandlers.networkMonitor.postMessage({
@@ -983,7 +1007,8 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                             requestId: id,
                             method: (xhr.__ctxMethod || 'GET').toUpperCase(),
                             url: xhr.__ctxUrl || '',
-                            requestType: 'xhr'
+                            requestType: 'xhr',
+                            requestBody: reqBody
                         });
                     } catch(e) {}
 
@@ -1011,7 +1036,7 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                                 duration: (Date.now() - startTime) / 1000.0,
                                 responseSize: size,
                                 responseHeaders: respHeaders,
-                                responseBody: body.substring(0, 2000)
+                                responseBody: body.substring(0, __ctxBodyLimit)
                             });
                         } catch(e) {}
                     });
@@ -1042,6 +1067,67 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
 
                     return window.__ctxOrigXHRSend.apply(this, arguments);
                 };
+
+                // WebSocket monitoring
+                window.__ctxOrigWebSocket = window.WebSocket;
+                window.WebSocket = function(url, protocols) {
+                    var wsId = 'ws_' + (++reqCounter);
+                    var ws = protocols
+                        ? new window.__ctxOrigWebSocket(url, protocols)
+                        : new window.__ctxOrigWebSocket(url);
+
+                    try {
+                        window.webkit.messageHandlers.networkMonitor.postMessage({
+                            type: 'wsOpen',
+                            requestId: wsId,
+                            url: typeof url === 'string' ? url : url.toString()
+                        });
+                    } catch(e) {}
+
+                    var origSend = ws.send.bind(ws);
+                    ws.send = function(data) {
+                        try {
+                            var msg = typeof data === 'string' ? data : '[binary]';
+                            window.webkit.messageHandlers.networkMonitor.postMessage({
+                                type: 'wsMessage',
+                                requestId: wsId,
+                                direction: 'sent',
+                                data: msg.substring(0, __ctxBodyLimit)
+                            });
+                        } catch(e) {}
+                        return origSend(data);
+                    };
+
+                    ws.addEventListener('message', function(event) {
+                        try {
+                            var msg = typeof event.data === 'string' ? event.data : '[binary]';
+                            window.webkit.messageHandlers.networkMonitor.postMessage({
+                                type: 'wsMessage',
+                                requestId: wsId,
+                                direction: 'received',
+                                data: msg.substring(0, __ctxBodyLimit)
+                            });
+                        } catch(e) {}
+                    });
+
+                    ws.addEventListener('close', function(event) {
+                        try {
+                            window.webkit.messageHandlers.networkMonitor.postMessage({
+                                type: 'wsClose',
+                                requestId: wsId,
+                                code: event.code,
+                                reason: event.reason || ''
+                            });
+                        } catch(e) {}
+                    });
+
+                    return ws;
+                };
+                window.WebSocket.prototype = window.__ctxOrigWebSocket.prototype;
+                window.WebSocket.CONNECTING = 0;
+                window.WebSocket.OPEN = 1;
+                window.WebSocket.CLOSING = 2;
+                window.WebSocket.CLOSED = 3;
             })();
         """
 
@@ -1074,6 +1160,7 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                 if (window.__ctxOrigFetch) { window.fetch = window.__ctxOrigFetch; delete window.__ctxOrigFetch; }
                 if (window.__ctxOrigXHROpen) { XMLHttpRequest.prototype.open = window.__ctxOrigXHROpen; delete window.__ctxOrigXHROpen; }
                 if (window.__ctxOrigXHRSend) { XMLHttpRequest.prototype.send = window.__ctxOrigXHRSend; delete window.__ctxOrigXHRSend; }
+                if (window.__ctxOrigWebSocket) { window.WebSocket = window.__ctxOrigWebSocket; delete window.__ctxOrigWebSocket; }
                 delete window.__ctxNetworkMonitorActive;
             })();
         """
@@ -1535,13 +1622,15 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                     else { return }
 
                     let reqHeaders = body["requestHeaders"] as? [String: String]
+                    let reqBody = body["requestBody"] as? String
                     let entry = NetworkRequestEntry(
                         id: requestId,
                         method: method,
                         url: url,
                         type: NetworkRequestEntry.RequestType(rawValue: requestType) ?? .fetch,
                         startTime: Date(),
-                        requestHeaders: reqHeaders
+                        requestHeaders: reqHeaders,
+                        requestBody: (reqBody?.isEmpty == false) ? reqBody : nil
                     )
                     self.networkRequests.append(entry)
 
@@ -1567,6 +1656,50 @@ class BrowserTab: NSObject, Identifiable, ObservableObject, WKScriptMessageHandl
                     if let index = self.networkRequests.firstIndex(where: { $0.id == requestId }) {
                         self.networkRequests[index].isError = true
                         self.networkRequests[index].isComplete = true
+                    }
+
+                case "wsOpen":
+                    guard let requestId = body["requestId"] as? String,
+                          let url = body["url"] as? String
+                    else { return }
+                    let entry = NetworkRequestEntry(
+                        id: requestId,
+                        method: "WS",
+                        url: url,
+                        type: .websocket,
+                        startTime: Date(),
+                        webSocketMessages: []
+                    )
+                    self.networkRequests.append(entry)
+                    if self.networkRequests.count > Self.maxNetworkEntries {
+                        self.networkRequests.removeFirst(self.networkRequests.count - Self.maxNetworkEntries)
+                    }
+
+                case "wsMessage":
+                    guard let requestId = body["requestId"] as? String,
+                          let dirStr = body["direction"] as? String,
+                          let data = body["data"] as? String,
+                          let direction = WebSocketMessage.Direction(rawValue: dirStr)
+                    else { return }
+                    if let index = self.networkRequests.firstIndex(where: { $0.id == requestId }) {
+                        let msg = WebSocketMessage(timestamp: Date(), direction: direction, data: data)
+                        if self.networkRequests[index].webSocketMessages == nil {
+                            self.networkRequests[index].webSocketMessages = []
+                        }
+                        self.networkRequests[index].webSocketMessages?.append(msg)
+                    }
+
+                case "wsClose":
+                    guard let requestId = body["requestId"] as? String else { return }
+                    if let index = self.networkRequests.firstIndex(where: { $0.id == requestId }) {
+                        let code = body["code"] as? Int
+                        let reason = body["reason"] as? String ?? ""
+                        self.networkRequests[index].statusText = reason.isEmpty ? "Closed" : reason
+                        self.networkRequests[index].status = code
+                        self.networkRequests[index].isComplete = true
+                        self.networkRequests[index].duration = Date().timeIntervalSince(
+                            self.networkRequests[index].startTime
+                        )
                     }
 
                 default:

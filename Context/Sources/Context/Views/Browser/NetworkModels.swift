@@ -13,6 +13,7 @@ struct NetworkRequestEntry: Identifiable {
     var responseSize: Int?
     var requestHeaders: [String: String]?
     var responseHeaders: [String: String]?
+    var requestBody: String?
     var responseBody: String?
     var isComplete: Bool = false
     var isError: Bool = false
@@ -20,14 +21,18 @@ struct NetworkRequestEntry: Identifiable {
     enum RequestType: String {
         case fetch = "fetch"
         case xhr = "xhr"
+        case websocket = "websocket"
 
         var icon: String {
             switch self {
             case .fetch: return "arrow.up.arrow.down"
             case .xhr: return "network"
+            case .websocket: return "bolt.horizontal"
             }
         }
     }
+
+    var webSocketMessages: [WebSocketMessage]?
 
     var statusColor: Color {
         guard let status else { return isError ? .red : .secondary }
@@ -70,5 +75,35 @@ struct NetworkRequestEntry: Identifiable {
             return urlObj.host ?? url
         }
         return path
+    }
+
+    var domain: String {
+        URL(string: url)?.host ?? ""
+    }
+
+    enum StatusClass: String {
+        case success, redirect, clientError, serverError, unknown
+    }
+
+    var statusClass: StatusClass {
+        guard let status else { return .unknown }
+        switch status {
+        case 200..<300: return .success
+        case 300..<400: return .redirect
+        case 400..<500: return .clientError
+        case 500..<600: return .serverError
+        default: return .unknown
+        }
+    }
+}
+
+struct WebSocketMessage: Identifiable {
+    let id = UUID()
+    let timestamp: Date
+    let direction: Direction
+    let data: String
+
+    enum Direction: String {
+        case sent, received
     }
 }

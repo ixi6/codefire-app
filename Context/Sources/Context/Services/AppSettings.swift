@@ -46,6 +46,14 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(notifyOnClaudeDone, forKey: "notifyOnClaudeDone") }
     }
 
+    // Browser
+    @Published var browserAllowedDomains: [String] {
+        didSet { UserDefaults.standard.set(browserAllowedDomains, forKey: "browserAllowedDomains") }
+    }
+    @Published var networkBodyLimit: Int {
+        didSet { UserDefaults.standard.set(networkBodyLimit, forKey: "networkBodyLimit") }
+    }
+
     // Briefing
     @Published var briefingStalenessHours: Double {
         didSet { UserDefaults.standard.set(briefingStalenessHours, forKey: "briefingStalenessHours") }
@@ -82,6 +90,9 @@ class AppSettings: ObservableObject {
 
         self.notifyOnNewEmail = defaults.object(forKey: "notifyOnNewEmail") as? Bool ?? true
         self.notifyOnClaudeDone = defaults.object(forKey: "notifyOnClaudeDone") as? Bool ?? true
+
+        self.browserAllowedDomains = defaults.stringArray(forKey: "browserAllowedDomains") ?? []
+        self.networkBodyLimit = defaults.object(forKey: "networkBodyLimit") as? Int ?? 51200
 
         self.briefingStalenessHours = defaults.object(forKey: "briefingStalenessHours") as? Double ?? 6.0
 

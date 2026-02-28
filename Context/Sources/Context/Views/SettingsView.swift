@@ -26,6 +26,11 @@ struct SettingsView: View {
                     Label("Gmail", systemImage: "envelope")
                 }
 
+            BrowserSettingsTab(settings: settings)
+                .tabItem {
+                    Label("Browser", systemImage: "globe")
+                }
+
             BriefingSettingsTab(settings: settings)
                 .tabItem {
                     Label("Briefing", systemImage: "bell.badge")
@@ -501,5 +506,79 @@ private struct GmailSettingsTab: View {
         } catch {
             print("GmailSettings: failed to delete rule: \(error)")
         }
+    }
+}
+
+// MARK: - Browser Tab
+
+private struct BrowserSettingsTab: View {
+    @ObservedObject var settings: AppSettings
+    @State private var newDomain: String = ""
+
+    var body: some View {
+        Form {
+            Section("Domain Allowlist") {
+                Text("When non-empty, the browser MCP tools can only navigate to these domains. Localhost and 127.0.0.1 are always allowed.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+
+                ForEach(Array(settings.browserAllowedDomains.enumerated()), id: \.offset) { index, domain in
+                    HStack {
+                        Text(domain)
+                            .font(.system(size: 12, design: .monospaced))
+                        Spacer()
+                        Button {
+                            settings.browserAllowedDomains.remove(at: index)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                HStack(spacing: 6) {
+                    TextField("example.com or *.example.com", text: $newDomain)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+                        .onSubmit { addDomain() }
+
+                    Button("Add") { addDomain() }
+                        .font(.system(size: 11))
+                        .disabled(newDomain.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+
+                if settings.browserAllowedDomains.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 10))
+                        Text("Empty list = all domains allowed")
+                            .font(.system(size: 11))
+                    }
+                    .foregroundStyle(.tertiary)
+                }
+            }
+
+            Section("Network Capture") {
+                Picker("Response body limit", selection: $settings.networkBodyLimit) {
+                    Text("2 KB").tag(2048)
+                    Text("10 KB").tag(10240)
+                    Text("50 KB (default)").tag(51200)
+                    Text("100 KB").tag(102400)
+                }
+                Text("Larger limits capture more of each response body in the Network tab but use more memory.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+
+    private func addDomain() {
+        let domain = newDomain.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !domain.isEmpty, !settings.browserAllowedDomains.contains(domain) else { return }
+        settings.browserAllowedDomains.append(domain)
+        newDomain = ""
     }
 }
