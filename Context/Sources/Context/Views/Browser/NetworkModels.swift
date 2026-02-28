@@ -95,6 +95,16 @@ struct NetworkRequestEntry: Identifiable {
         default: return .unknown
         }
     }
+
+    var waterfallColor: Color {
+        switch statusClass {
+        case .success: return .green
+        case .redirect: return .blue
+        case .clientError: return .orange
+        case .serverError: return .red
+        case .unknown: return isError ? .red : .secondary
+        }
+    }
 }
 
 struct WebSocketMessage: Identifiable {

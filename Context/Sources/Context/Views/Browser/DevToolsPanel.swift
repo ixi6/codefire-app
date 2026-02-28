@@ -41,6 +41,15 @@ struct DevToolsPanel: View {
     @State private var storageSearchText: String = ""
     @State private var isLoadingStorage: Bool = false
 
+    // Network detail tab
+    enum DetailTab: String, CaseIterable {
+        case general = "General"
+        case headers = "Headers"
+        case request = "Request"
+        case response = "Response"
+    }
+    @State private var detailTab: DetailTab = .general
+
     enum StatusFilter: String, CaseIterable {
         case any = "Any"
         case s2xx = "2xx"
@@ -790,6 +799,18 @@ struct DevToolsPanel: View {
         }
     }
 
+    private var waterfallTimeline: (start: Date, span: TimeInterval) {
+        let requests = filteredRequests
+        guard let first = requests.first else { return (Date(), 1) }
+        let start = first.startTime
+        let maxEnd = requests.compactMap { req -> Date? in
+            guard let dur = req.duration else { return req.isComplete ? req.startTime : Date() }
+            return req.startTime.addingTimeInterval(dur)
+        }.max() ?? Date()
+        let span = max(maxEnd.timeIntervalSince(start), 0.1)
+        return (start, span)
+    }
+
     @ViewBuilder
     private func networkRequestRow(_ request: NetworkRequestEntry) -> some View {
         HStack(spacing: 6) {
@@ -813,6 +834,10 @@ struct DevToolsPanel: View {
                 .truncationMode(.middle)
 
             Spacer()
+
+            // Waterfall bar
+            waterfallBar(request)
+                .frame(width: 80, height: 10)
 
             // Duration
             Text(request.formattedDuration)
@@ -845,125 +870,195 @@ struct DevToolsPanel: View {
     }
 
     @ViewBuilder
+    private func waterfallBar(_ request: NetworkRequestEntry) -> some View {
+        GeometryReader { geo in
+            let timeline = waterfallTimeline
+            let offset = request.startTime.timeIntervalSince(timeline.start)
+            let duration = request.duration ?? (request.isComplete ? 0.01 : Date().timeIntervalSince(request.startTime))
+            let startFraction = CGFloat(offset / timeline.span)
+            let widthFraction = CGFloat(max(duration / timeline.span, 0.008)) // minimum visible width
+
+            RoundedRectangle(cornerRadius: 2)
+                .fill(request.waterfallColor.opacity(0.7))
+                .frame(
+                    width: max(geo.size.width * widthFraction, 2),
+                    height: 6
+                )
+                .offset(x: geo.size.width * startFraction)
+                .frame(maxHeight: .infinity, alignment: .center)
+        }
+    }
+
     private func networkDetailView(_ request: NetworkRequestEntry) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                // Full URL
-                sectionHeader("URL")
-                Text(request.url)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .textSelection(.enabled)
-                    .lineLimit(5)
-                    .padding(.horizontal, 12)
-
-                // General info
-                Divider()
-                sectionHeader("General")
-                VStack(alignment: .leading, spacing: 2) {
-                    networkDetailRow("Method", request.method)
-                    networkDetailRow("Status", request.statusLabel)
-                    networkDetailRow("Type", request.type.rawValue.uppercased())
-                    networkDetailRow("Duration", request.formattedDuration)
-                    if !request.formattedSize.isEmpty {
-                        networkDetailRow("Size", request.formattedSize)
+        VStack(spacing: 0) {
+            // Detail tab picker
+            HStack(spacing: 0) {
+                ForEach(DetailTab.allCases, id: \.self) { tab in
+                    Button {
+                        detailTab = tab
+                    } label: {
+                        Text(tab.rawValue)
+                            .font(.system(size: 10, weight: detailTab == tab ? .semibold : .regular))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(
+                                detailTab == tab
+                                    ? Color(nsColor: .controlBackgroundColor)
+                                    : Color.clear
+                            )
+                            .contentShape(Rectangle())
                     }
-                }
-                .padding(.horizontal, 12)
-
-                // Request headers
-                if let headers = request.requestHeaders, !headers.isEmpty {
-                    Divider()
-                    sectionHeader("Request Headers")
-                    headersView(headers)
+                    .buttonStyle(.plain)
+                    .foregroundColor(detailTab == tab ? .primary : .secondary)
                 }
 
-                // Request body
-                if let reqBody = request.requestBody, !reqBody.isEmpty {
-                    Divider()
-                    sectionHeader("Request Body")
-                    Text(prettyPrintJSON(reqBody))
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .lineLimit(30)
-                        .padding(.horizontal, 12)
-                }
-
-                // Response headers
-                if let headers = request.responseHeaders, !headers.isEmpty {
-                    Divider()
-                    sectionHeader("Response Headers")
-                    headersView(headers)
-                }
-
-                // Response body preview
-                if let body = request.responseBody, !body.isEmpty {
-                    Divider()
-                    sectionHeader("Response Body")
-                    let preview = prettyPrintJSON(body)
-                    Text(preview)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .lineLimit(50)
-                        .padding(.horizontal, 12)
-                }
-
-                // WebSocket messages
-                if let wsMessages = request.webSocketMessages, !wsMessages.isEmpty {
-                    Divider()
-                    sectionHeader("WebSocket Messages (\(wsMessages.count))")
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(wsMessages) { msg in
-                            HStack(spacing: 6) {
-                                Image(systemName: msg.direction == .sent ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(msg.direction == .sent ? .blue : .green)
-                                Text(msg.timestamp, style: .time)
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundStyle(.tertiary)
-                                Text(msg.data)
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                }
+                Spacer()
 
                 // Copy as cURL
                 if request.type != .websocket {
-                    Divider()
-                    HStack {
-                        Spacer()
-                        Button {
-                            let curl = buildCurlCommand(request)
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(curl, forType: .string)
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.system(size: 9))
-                                Text("Copy as cURL")
-                                    .font(.system(size: 10))
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(Color(nsColor: .controlBackgroundColor))
-                            )
+                    Button {
+                        let curl = buildCurlCommand(request)
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(curl, forType: .string)
+                    } label: {
+                        HStack(spacing: 2) {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 8))
+                            Text("cURL")
+                                .font(.system(size: 9))
                         }
-                        .buttonStyle(.plain)
-                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color(nsColor: .controlBackgroundColor))
+                        )
                     }
-                    .padding(.horizontal, 12)
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
                 }
             }
-            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    switch detailTab {
+                    case .general:
+                        detailGeneralTab(request)
+                    case .headers:
+                        detailHeadersTab(request)
+                    case .request:
+                        detailRequestTab(request)
+                    case .response:
+                        detailResponseTab(request)
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func detailGeneralTab(_ request: NetworkRequestEntry) -> some View {
+        sectionHeader("URL")
+        Text(request.url)
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundStyle(.primary)
+            .textSelection(.enabled)
+            .lineLimit(5)
+            .padding(.horizontal, 12)
+
+        Divider()
+        sectionHeader("Details")
+        VStack(alignment: .leading, spacing: 2) {
+            networkDetailRow("Method", request.method)
+            networkDetailRow("Status", request.statusLabel)
+            networkDetailRow("Type", request.type.rawValue.uppercased())
+            networkDetailRow("Duration", request.formattedDuration)
+            if !request.formattedSize.isEmpty {
+                networkDetailRow("Size", request.formattedSize)
+            }
+            networkDetailRow("Domain", request.domain)
+        }
+        .padding(.horizontal, 12)
+    }
+
+    @ViewBuilder
+    private func detailHeadersTab(_ request: NetworkRequestEntry) -> some View {
+        if let headers = request.requestHeaders, !headers.isEmpty {
+            sectionHeader("Request Headers (\(headers.count))")
+            headersView(headers)
+        } else {
+            sectionHeader("Request Headers")
+            Text("None")
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 12)
+        }
+
+        Divider()
+
+        if let headers = request.responseHeaders, !headers.isEmpty {
+            sectionHeader("Response Headers (\(headers.count))")
+            headersView(headers)
+        } else {
+            sectionHeader("Response Headers")
+            Text("None")
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 12)
+        }
+    }
+
+    @ViewBuilder
+    private func detailRequestTab(_ request: NetworkRequestEntry) -> some View {
+        if let reqBody = request.requestBody, !reqBody.isEmpty {
+            sectionHeader("Request Body")
+            Text(prettyPrintJSON(reqBody))
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .padding(.horizontal, 12)
+        } else if let wsMessages = request.webSocketMessages, !wsMessages.isEmpty {
+            sectionHeader("WebSocket Messages (\(wsMessages.count))")
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(wsMessages) { msg in
+                    HStack(spacing: 6) {
+                        Image(systemName: msg.direction == .sent ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                            .font(.system(size: 9))
+                            .foregroundColor(msg.direction == .sent ? .blue : .green)
+                        Text(msg.timestamp, style: .time)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                        Text(msg.data)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+        } else {
+            emptyState(icon: "arrow.up.doc", message: "No request body")
+        }
+    }
+
+    @ViewBuilder
+    private func detailResponseTab(_ request: NetworkRequestEntry) -> some View {
+        if let body = request.responseBody, !body.isEmpty {
+            sectionHeader("Response Body")
+            Text(prettyPrintJSON(body))
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .padding(.horizontal, 12)
+        } else {
+            emptyState(icon: "arrow.down.doc", message: "No response body")
         }
     }
 

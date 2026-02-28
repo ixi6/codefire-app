@@ -915,6 +915,154 @@ class MCPServer {
                     "required": ["name", "value"]
                 ]
             ],
+            // MARK: - Git Tools
+            [
+                "name": "git_status",
+                "description": "Get git status for the current project. Returns current branch, staged files, unstaged changes, and untracked files. Runs directly against the project's git repository.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "project_id": ["type": "string", "description": "Project ID (auto-detected if omitted)"]
+                    ],
+                    "required": [] as [String]
+                ]
+            ],
+            [
+                "name": "git_diff",
+                "description": "Get git diff output. Shows unstaged changes by default, or staged changes with staged=true. Optionally filter to a specific file.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "file_path": ["type": "string", "description": "Specific file to diff (relative to project root)"],
+                        "staged": ["type": "boolean", "description": "Show staged changes instead of unstaged (default: false)"],
+                        "project_id": ["type": "string", "description": "Project ID (auto-detected if omitted)"]
+                    ],
+                    "required": [] as [String]
+                ]
+            ],
+            [
+                "name": "git_log",
+                "description": "Get recent git commit history. Returns commit hash, message, author, and relative date.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "count": ["type": "integer", "description": "Number of commits to show (default: 15, max: 50)"],
+                        "file_path": ["type": "string", "description": "Show only commits affecting this file"],
+                        "project_id": ["type": "string", "description": "Project ID (auto-detected if omitted)"]
+                    ],
+                    "required": [] as [String]
+                ]
+            ],
+            [
+                "name": "git_stage",
+                "description": "Stage files for commit. Stage a specific file or all changes.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "file_path": ["type": "string", "description": "File to stage (relative to project root). Omit to stage all changes."],
+                        "project_id": ["type": "string", "description": "Project ID (auto-detected if omitted)"]
+                    ],
+                    "required": [] as [String]
+                ]
+            ],
+            [
+                "name": "git_unstage",
+                "description": "Unstage files from the staging area. Unstage a specific file or all staged changes.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "file_path": ["type": "string", "description": "File to unstage (relative to project root). Omit to unstage all."],
+                        "project_id": ["type": "string", "description": "Project ID (auto-detected if omitted)"]
+                    ],
+                    "required": [] as [String]
+                ]
+            ],
+            [
+                "name": "git_commit",
+                "description": "Create a git commit with the currently staged changes.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "message": ["type": "string", "description": "Commit message"],
+                        "project_id": ["type": "string", "description": "Project ID (auto-detected if omitted)"]
+                    ],
+                    "required": ["message"]
+                ]
+            ],
+            // MARK: - Network Inspection Tools
+            [
+                "name": "get_network_requests",
+                "description": "Get captured network requests from the browser's network monitor. Returns method, URL, status, duration, size, and type for each request. The network monitor must be active (started via the DevTools panel).",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "domain": ["type": "string", "description": "Filter by domain (substring match)"],
+                        "status_class": ["type": "string", "enum": ["2xx", "3xx", "4xx", "5xx", "error"], "description": "Filter by status class"],
+                        "limit": ["type": "integer", "description": "Max requests to return (default: 50)"],
+                        "tab_id": ["type": "string", "description": "Tab ID (defaults to active tab)"]
+                    ],
+                    "required": [] as [String]
+                ]
+            ],
+            [
+                "name": "get_request_detail",
+                "description": "Get full details of a specific network request including headers and body content.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "request_id": ["type": "string", "description": "Request ID from get_network_requests"],
+                        "tab_id": ["type": "string", "description": "Tab ID (defaults to active tab)"]
+                    ],
+                    "required": ["request_id"]
+                ]
+            ],
+            [
+                "name": "clear_network_log",
+                "description": "Clear all captured network requests from the browser's network monitor.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "tab_id": ["type": "string", "description": "Tab ID (defaults to active tab)"]
+                    ],
+                    "required": [] as [String]
+                ]
+            ],
+            // MARK: - Environment Tools
+            [
+                "name": "detect_services",
+                "description": "Detect cloud services and deployment platforms configured in the project. Scans for Firebase, Supabase, Vercel, Netlify, Docker, Railway, and AWS Amplify configurations.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "project_id": ["type": "string", "description": "Project ID (auto-detected if omitted)"]
+                    ],
+                    "required": [] as [String]
+                ]
+            ],
+            [
+                "name": "list_env_files",
+                "description": "List environment files (.env, .env.local, .env.development, etc.) in the project with variable counts.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "project_id": ["type": "string", "description": "Project ID (auto-detected if omitted)"]
+                    ],
+                    "required": [] as [String]
+                ]
+            ],
+            [
+                "name": "get_env_variables",
+                "description": "Parse and return variables from a specific environment file. Values are masked by default for security.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "file_name": ["type": "string", "description": "Environment file name (e.g. '.env', '.env.local')"],
+                        "show_values": ["type": "boolean", "description": "Show actual values instead of masked (default: false)"],
+                        "project_id": ["type": "string", "description": "Project ID (auto-detected if omitted)"]
+                    ],
+                    "required": ["file_name"]
+                ]
+            ],
             // Context Engine
             [
                 "name": "context_search",
@@ -1046,6 +1194,21 @@ class MCPServer {
             case "browser_get_cookies": result = try browserGetCookies(args)
             case "browser_get_storage": result = try browserGetStorage(args)
             case "browser_set_cookie":  result = try browserSetCookie(args)
+            // Git tools
+            case "git_status":         result = try gitStatus(args)
+            case "git_diff":           result = try gitDiff(args)
+            case "git_log":            result = try gitLog(args)
+            case "git_stage":          result = try gitStage(args)
+            case "git_unstage":        result = try gitUnstage(args)
+            case "git_commit":         result = try gitCommit(args)
+            // Network inspection tools
+            case "get_network_requests": result = try getNetworkRequests(args)
+            case "get_request_detail":   result = try getRequestDetail(args)
+            case "clear_network_log":    result = try clearNetworkLog(args)
+            // Environment tools
+            case "detect_services":    result = try detectServices(args)
+            case "list_env_files":     result = try listEnvFiles(args)
+            case "get_env_variables":  result = try getEnvVariables(args)
             case "context_search":     result = try contextSearch(args)
             case "generate_image":     result = try generateImage(args)
             case "edit_image":         result = try editImage(args)
@@ -1809,6 +1972,362 @@ class MCPServer {
         if let sameSite = args["same_site"] as? String { cmdArgs["same_site"] = sameSite }
         if let tabId = args["tab_id"] as? String { cmdArgs["tab_id"] = tabId }
         return try executeBrowserCommand(tool: "browser_set_cookie", args: cmdArgs)
+    }
+
+    // MARK: - Git Tool Implementations
+
+    /// Resolve project path from args or auto-detected project.
+    func resolveProjectPath(_ args: [String: Any]) throws -> String {
+        let projectId = try resolveProjectId(args)
+        guard let path = try db.read({ conn in
+            try String.fetchOne(conn, sql: "SELECT path FROM projects WHERE id = ?", arguments: [projectId])
+        }) else {
+            throw MCPError(message: "Could not resolve project path for project \(projectId)")
+        }
+        return path
+    }
+
+    /// Run a git command and return (output, exitCode).
+    func runGit(_ arguments: [String], at path: String) -> (output: String?, exitCode: Int32) {
+        let process = Process()
+        let pipe = Pipe()
+
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = arguments
+        process.currentDirectoryURL = URL(fileURLWithPath: path)
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8)
+            return (output, process.terminationStatus)
+        } catch {
+            return (nil, -1)
+        }
+    }
+
+    func gitStatus(_ args: [String: Any]) throws -> String {
+        let path = try resolveProjectPath(args)
+
+        // Get branch
+        let branchResult = runGit(["rev-parse", "--abbrev-ref", "HEAD"], at: path)
+        let branch = branchResult.output?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown"
+
+        // Get status
+        let statusResult = runGit(["status", "--porcelain"], at: path)
+        guard statusResult.exitCode == 0 else {
+            throw MCPError(message: "Not a git repository or git not available at \(path)")
+        }
+
+        var staged: [[String: String]] = []
+        var unstaged: [[String: String]] = []
+        var untracked: [[String: String]] = []
+
+        let lines = (statusResult.output ?? "").components(separatedBy: "\n")
+        for line in lines {
+            guard line.count >= 3 else { continue }
+            let indexChar = line[line.startIndex]
+            let workTreeChar = line[line.index(after: line.startIndex)]
+            let filePath = String(line.dropFirst(3))
+
+            if indexChar == "?" && workTreeChar == "?" {
+                untracked.append(["status": "?", "path": filePath])
+                continue
+            }
+            if indexChar != " " && indexChar != "?" {
+                staged.append(["status": String(indexChar), "path": filePath])
+            }
+            if workTreeChar != " " && workTreeChar != "?" {
+                unstaged.append(["status": String(workTreeChar), "path": filePath])
+            }
+        }
+
+        let result: [String: Any] = [
+            "branch": branch,
+            "staged": staged,
+            "unstaged": unstaged,
+            "untracked": untracked,
+            "staged_count": staged.count,
+            "unstaged_count": unstaged.count,
+            "untracked_count": untracked.count,
+            "clean": staged.isEmpty && unstaged.isEmpty && untracked.isEmpty
+        ]
+
+        if let data = try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "Branch: \(branch), \(staged.count) staged, \(unstaged.count) unstaged, \(untracked.count) untracked"
+    }
+
+    func gitDiff(_ args: [String: Any]) throws -> String {
+        let path = try resolveProjectPath(args)
+        var gitArgs = ["diff", "--no-color"]
+        if args["staged"] as? Bool == true {
+            gitArgs.append("--staged")
+        }
+        if let filePath = args["file_path"] as? String {
+            gitArgs.append(contentsOf: ["--", filePath])
+        }
+
+        let result = runGit(gitArgs, at: path)
+        guard result.exitCode == 0 else {
+            throw MCPError(message: "git diff failed")
+        }
+
+        let output = result.output ?? ""
+        if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let target = args["staged"] as? Bool == true ? "staged" : "unstaged"
+            return "No \(target) changes" + (args["file_path"] != nil ? " for \(args["file_path"] as! String)" : "")
+        }
+        return output
+    }
+
+    func gitLog(_ args: [String: Any]) throws -> String {
+        let path = try resolveProjectPath(args)
+        let count = min(args["count"] as? Int ?? 15, 50)
+        var gitArgs = ["log", "--format=%H|%h|%s|%an|%ar", "-\(count)"]
+        if let filePath = args["file_path"] as? String {
+            gitArgs.append(contentsOf: ["--", filePath])
+        }
+
+        let result = runGit(gitArgs, at: path)
+        guard result.exitCode == 0 else {
+            throw MCPError(message: "git log failed (is this a git repository?)")
+        }
+
+        var commits: [[String: String]] = []
+        let lines = (result.output ?? "").components(separatedBy: "\n")
+        for line in lines {
+            guard !line.isEmpty else { continue }
+            let parts = line.components(separatedBy: "|")
+            guard parts.count >= 5 else { continue }
+            commits.append([
+                "sha": parts[0],
+                "short_sha": parts[1],
+                "message": parts[2],
+                "author": parts[3],
+                "date": parts[4]
+            ])
+        }
+
+        if let data = try? JSONSerialization.data(withJSONObject: ["commits": commits, "count": commits.count], options: [.prettyPrinted]),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return result.output ?? ""
+    }
+
+    func gitStage(_ args: [String: Any]) throws -> String {
+        let path = try resolveProjectPath(args)
+        var gitArgs: [String]
+        if let filePath = args["file_path"] as? String {
+            gitArgs = ["add", "--", filePath]
+        } else {
+            gitArgs = ["add", "-A"]
+        }
+
+        let result = runGit(gitArgs, at: path)
+        guard result.exitCode == 0 else {
+            throw MCPError(message: "git stage failed: \(result.output ?? "unknown error")")
+        }
+
+        let target = (args["file_path"] as? String) ?? "all changes"
+        return "Staged: \(target)"
+    }
+
+    func gitUnstage(_ args: [String: Any]) throws -> String {
+        let path = try resolveProjectPath(args)
+        var gitArgs: [String]
+        if let filePath = args["file_path"] as? String {
+            gitArgs = ["restore", "--staged", "--", filePath]
+        } else {
+            gitArgs = ["restore", "--staged", "."]
+        }
+
+        let result = runGit(gitArgs, at: path)
+        guard result.exitCode == 0 else {
+            throw MCPError(message: "git unstage failed: \(result.output ?? "unknown error")")
+        }
+
+        let target = (args["file_path"] as? String) ?? "all staged changes"
+        return "Unstaged: \(target)"
+    }
+
+    func gitCommit(_ args: [String: Any]) throws -> String {
+        let path = try resolveProjectPath(args)
+        guard let message = args["message"] as? String, !message.isEmpty else {
+            throw MCPError(message: "Commit message is required")
+        }
+
+        let result = runGit(["commit", "-m", message], at: path)
+        guard result.exitCode == 0 else {
+            throw MCPError(message: "git commit failed: \(result.output ?? "nothing to commit?")")
+        }
+
+        return result.output ?? "Committed successfully"
+    }
+
+    // MARK: - Network Inspection Tool Implementations
+
+    func getNetworkRequests(_ args: [String: Any]) throws -> String {
+        var cmdArgs: [String: Any] = [:]
+        if let domain = args["domain"] as? String { cmdArgs["domain"] = domain }
+        if let statusClass = args["status_class"] as? String { cmdArgs["status_class"] = statusClass }
+        if let limit = args["limit"] as? Int { cmdArgs["limit"] = limit }
+        if let tabId = args["tab_id"] as? String { cmdArgs["tab_id"] = tabId }
+        return try executeBrowserCommand(tool: "get_network_requests", args: cmdArgs)
+    }
+
+    func getRequestDetail(_ args: [String: Any]) throws -> String {
+        var cmdArgs: [String: Any] = [:]
+        guard let requestId = args["request_id"] as? String else {
+            throw MCPError(message: "request_id is required")
+        }
+        cmdArgs["request_id"] = requestId
+        if let tabId = args["tab_id"] as? String { cmdArgs["tab_id"] = tabId }
+        return try executeBrowserCommand(tool: "get_request_detail", args: cmdArgs)
+    }
+
+    func clearNetworkLog(_ args: [String: Any]) throws -> String {
+        var cmdArgs: [String: Any] = [:]
+        if let tabId = args["tab_id"] as? String { cmdArgs["tab_id"] = tabId }
+        return try executeBrowserCommand(tool: "clear_network_log", args: cmdArgs)
+    }
+
+    // MARK: - Environment Tool Implementations
+
+    func detectServices(_ args: [String: Any]) throws -> String {
+        let path = try resolveProjectPath(args)
+        let fm = FileManager.default
+
+        var services: [[String: Any]] = []
+
+        // Service detection config: (type, config files, dashboard URL pattern)
+        let checks: [(String, [String], String?)] = [
+            ("Firebase", ["firebase.json", ".firebaserc"], "https://console.firebase.google.com"),
+            ("Supabase", ["supabase/config.toml"], "https://supabase.com/dashboard"),
+            ("Vercel", ["vercel.json", ".vercel/project.json"], "https://vercel.com/dashboard"),
+            ("Netlify", ["netlify.toml"], "https://app.netlify.com"),
+            ("Docker", ["docker-compose.yml", "docker-compose.yaml", "Dockerfile"], nil),
+            ("Railway", ["railway.toml", "railway.json"], "https://railway.app/dashboard"),
+        ]
+
+        for (serviceName, configFiles, dashboardURL) in checks {
+            for configFile in configFiles {
+                let fullPath = (path as NSString).appendingPathComponent(configFile)
+                if fm.fileExists(atPath: fullPath) {
+                    var entry: [String: Any] = [
+                        "service": serviceName,
+                        "config_file": configFile
+                    ]
+                    if let url = dashboardURL { entry["dashboard_url"] = url }
+                    services.append(entry)
+                    break // Only add each service type once
+                }
+            }
+        }
+
+        // Check for amplify directory
+        let amplifyDir = (path as NSString).appendingPathComponent("amplify")
+        var isDir: ObjCBool = false
+        if fm.fileExists(atPath: amplifyDir, isDirectory: &isDir), isDir.boolValue {
+            services.append([
+                "service": "AWS Amplify",
+                "config_file": "amplify/",
+                "dashboard_url": "https://console.aws.amazon.com/amplify"
+            ])
+        }
+
+        if let data = try? JSONSerialization.data(withJSONObject: ["services": services, "count": services.count], options: [.prettyPrinted]),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "Found \(services.count) services"
+    }
+
+    func listEnvFiles(_ args: [String: Any]) throws -> String {
+        let path = try resolveProjectPath(args)
+        let fm = FileManager.default
+        let envFileNames = [".env", ".env.local", ".env.development", ".env.staging", ".env.production", ".env.example", ".env.template", ".env.sample"]
+
+        var files: [[String: Any]] = []
+        for name in envFileNames {
+            let fullPath = (path as NSString).appendingPathComponent(name)
+            guard fm.fileExists(atPath: fullPath),
+                  let contents = try? String(contentsOfFile: fullPath, encoding: .utf8) else { continue }
+
+            let varCount = contents.components(separatedBy: .newlines)
+                .filter { line in
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    return !trimmed.isEmpty && !trimmed.hasPrefix("#") && trimmed.contains("=")
+                }.count
+
+            files.append([
+                "name": name,
+                "variable_count": varCount
+            ])
+        }
+
+        if let data = try? JSONSerialization.data(withJSONObject: ["files": files, "count": files.count], options: [.prettyPrinted]),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "Found \(files.count) env files"
+    }
+
+    func getEnvVariables(_ args: [String: Any]) throws -> String {
+        let path = try resolveProjectPath(args)
+        guard let fileName = args["file_name"] as? String else {
+            throw MCPError(message: "file_name is required")
+        }
+        let showValues = args["show_values"] as? Bool ?? false
+
+        let fullPath = (path as NSString).appendingPathComponent(fileName)
+        guard FileManager.default.fileExists(atPath: fullPath) else {
+            throw MCPError(message: "File not found: \(fileName)")
+        }
+        guard let contents = try? String(contentsOfFile: fullPath, encoding: .utf8) else {
+            throw MCPError(message: "Could not read file: \(fileName)")
+        }
+
+        var variables: [[String: String]] = []
+        for line in contents.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
+            let parts = trimmed.split(separator: "=", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            let key = String(parts[0]).trimmingCharacters(in: .whitespaces)
+            let value = String(parts[1]).trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+
+            let displayValue: String
+            if showValues {
+                displayValue = value
+            } else {
+                // Mask: show first 2 chars + asterisks
+                if value.count <= 4 {
+                    displayValue = String(repeating: "*", count: value.count)
+                } else {
+                    displayValue = String(value.prefix(2)) + String(repeating: "*", count: min(value.count - 2, 20))
+                }
+            }
+            variables.append(["key": key, "value": displayValue])
+        }
+
+        if let data = try? JSONSerialization.data(withJSONObject: [
+            "file": fileName,
+            "variables": variables,
+            "count": variables.count,
+            "values_masked": !showValues
+        ] as [String: Any], options: [.prettyPrinted]),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "Found \(variables.count) variables in \(fileName)"
     }
 
     // MARK: - Browser Command Execution

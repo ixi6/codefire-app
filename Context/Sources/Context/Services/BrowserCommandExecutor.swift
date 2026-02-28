@@ -144,6 +144,13 @@ class BrowserCommandExecutor: ObservableObject {
             return try await handleGetStorage(args)
         case "browser_set_cookie":
             return try await handleSetCookie(args)
+        // Network inspection tools
+        case "get_network_requests":
+            return try await handleGetNetworkRequests(args)
+        case "get_request_detail":
+            return try await handleGetRequestDetail(args)
+        case "clear_network_log":
+            return try await handleClearNetworkLog(args)
         default:
             throw BrowserCommandError.unknownTool(command.tool)
         }
@@ -535,6 +542,105 @@ class BrowserCommandExecutor: ObservableObject {
         return toJSON(["set": true])
     }
 
+    // MARK: - Network Inspection Handlers
+
+    private func handleGetNetworkRequests(_ args: [String: Any]) async throws -> String {
+        let tab = try resolveTab(args)
+        let domain = args["domain"] as? String
+        let statusClass = args["status_class"] as? String
+        let limit = args["limit"] as? Int ?? 50
+
+        var requests = tab.networkRequests
+
+        // Filter by domain
+        if let domain {
+            requests = requests.filter { $0.domain.contains(domain) }
+        }
+
+        // Filter by status class
+        if let statusClass {
+            requests = requests.filter { req in
+                guard let status = req.status else {
+                    return statusClass == "error" && req.isError
+                }
+                switch statusClass {
+                case "2xx": return (200..<300).contains(status)
+                case "3xx": return (300..<400).contains(status)
+                case "4xx": return (400..<500).contains(status)
+                case "5xx": return (500..<600).contains(status)
+                case "error": return req.isError
+                default: return true
+                }
+            }
+        }
+
+        // Limit results
+        let limited = Array(requests.prefix(limit))
+
+        let items: [[String: Any]] = limited.map { req in
+            var entry: [String: Any] = [
+                "id": req.id,
+                "method": req.method,
+                "url": req.url,
+                "type": req.type.rawValue
+            ]
+            if let status = req.status { entry["status"] = status }
+            if let duration = req.duration { entry["duration_ms"] = Int(duration * 1000) }
+            if let size = req.responseSize { entry["size"] = size }
+            entry["is_complete"] = req.isComplete
+            entry["is_error"] = req.isError
+            return entry
+        }
+
+        return toJSON(["requests": items, "count": items.count, "total": tab.networkRequests.count])
+    }
+
+    private func handleGetRequestDetail(_ args: [String: Any]) async throws -> String {
+        let tab = try resolveTab(args)
+        guard let requestId = args["request_id"] as? String else {
+            throw BrowserCommandError.missingParam("request_id")
+        }
+
+        guard let req = tab.networkRequests.first(where: { $0.id == requestId }) else {
+            throw BrowserCommandError.custom("Request not found: \(requestId)")
+        }
+
+        var detail: [String: Any] = [
+            "id": req.id,
+            "method": req.method,
+            "url": req.url,
+            "type": req.type.rawValue,
+            "is_complete": req.isComplete,
+            "is_error": req.isError
+        ]
+        if let status = req.status { detail["status"] = status }
+        if let statusText = req.statusText { detail["status_text"] = statusText }
+        if let duration = req.duration { detail["duration_ms"] = Int(duration * 1000) }
+        if let size = req.responseSize { detail["size"] = size }
+        if let reqHeaders = req.requestHeaders { detail["request_headers"] = reqHeaders }
+        if let resHeaders = req.responseHeaders { detail["response_headers"] = resHeaders }
+        if let reqBody = req.requestBody { detail["request_body"] = reqBody }
+        if let resBody = req.responseBody { detail["response_body"] = resBody }
+
+        if let wsMessages = req.webSocketMessages {
+            detail["websocket_messages"] = wsMessages.map { msg in
+                [
+                    "direction": msg.direction.rawValue,
+                    "data": msg.data,
+                    "timestamp": ISO8601DateFormatter().string(from: msg.timestamp)
+                ]
+            }
+        }
+
+        return toJSON(detail)
+    }
+
+    private func handleClearNetworkLog(_ args: [String: Any]) async throws -> String {
+        let tab = try resolveTab(args)
+        tab.networkRequests.removeAll()
+        return toJSON(["cleared": true])
+    }
+
     /// Map file extension to MIME type for uploads.
     private func mimeTypeForExtension(_ ext: String) -> String {
         let map: [String: String] = [
@@ -754,6 +860,7 @@ enum BrowserCommandError: LocalizedError {
     case unknownTool(String)
     case refNotFound(ref: String, snapshotAge: TimeInterval?)
     case domainNotAllowed(String)
+    case custom(String)
 
     var errorDescription: String? {
         switch self {
@@ -777,6 +884,8 @@ enum BrowserCommandError: LocalizedError {
         case .domainNotAllowed(let domain):
             let allowed = UserDefaults.standard.stringArray(forKey: "browserAllowedDomains") ?? []
             return "Domain '\(domain)' is not in the allowed list. Allowed: \(allowed.joined(separator: ", "))"
+        case .custom(let message):
+            return message
         }
     }
 }
