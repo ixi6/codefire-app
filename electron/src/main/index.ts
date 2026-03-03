@@ -1,5 +1,7 @@
 import { app, BrowserWindow } from 'electron'
 import path from 'path'
+import { getDatabase, closeDatabase } from './database/connection'
+import { registerAllHandlers } from './ipc'
 
 process.env.DIST_ELECTRON = path.join(__dirname, '..')
 process.env.DIST = path.join(process.env.DIST_ELECTRON, '../dist')
@@ -37,6 +39,10 @@ function createMainWindow() {
   })
 }
 
+// Initialize database and register IPC handlers
+const db = getDatabase()
+registerAllHandlers(db)
+
 app.whenReady().then(createMainWindow)
 
 app.on('window-all-closed', () => {
@@ -45,4 +51,8 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
+})
+
+app.on('before-quit', () => {
+  closeDatabase()
 })

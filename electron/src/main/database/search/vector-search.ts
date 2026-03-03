@@ -39,7 +39,7 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
  */
 export function vectorSearch(
   queryEmbedding: Float32Array,
-  chunks: Array<{ id: string; embedding: Buffer; [key: string]: unknown }>,
+  chunks: Array<{ id: string; embedding: Buffer }>,
   topN: number = 10
 ): Array<{ id: string; score: number }> {
   const scores = chunks.map((chunk) => ({
