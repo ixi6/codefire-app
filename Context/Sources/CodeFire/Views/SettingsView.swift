@@ -18,7 +18,7 @@ struct SettingsView: View {
 
             ContextEngineSettingsTab(settings: settings)
                 .tabItem {
-                    Label("Context Engine", systemImage: "brain")
+                    Label("CodeFire Engine", systemImage: "brain")
                 }
 
             GmailSettingsTab(settings: settings)
@@ -112,7 +112,7 @@ private struct TerminalSettingsTab: View {
     }
 }
 
-// MARK: - Context Engine Tab
+// MARK: - CodeFire Engine Tab
 
 private struct ContextEngineSettingsTab: View {
     @ObservedObject var settings: AppSettings

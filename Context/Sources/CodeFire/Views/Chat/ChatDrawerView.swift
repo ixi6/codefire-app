@@ -454,7 +454,7 @@ private struct ChatSettingsPopover: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(modelNames[ClaudeService.openRouterModel] ?? ClaudeService.openRouterModel)
                         .font(.system(size: 12, weight: .medium))
-                    Text("Configure in Settings \u{2192} Context Engine")
+                    Text("Configure in Settings \u{2192} CodeFire Engine")
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                 }
@@ -470,7 +470,7 @@ private struct ChatSettingsPopover: View {
                         Text(ClaudeService.openRouterAPIKey?.isEmpty == false ? "API key configured" : "No API key set")
                             .font(.system(size: 11))
                     }
-                    Text("Configure in Settings \u{2192} Context Engine")
+                    Text("Configure in Settings \u{2192} CodeFire Engine")
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env swift
-// Generates a minimal monochrome rocket ship app icon for Context.
+// Generates a minimal monochrome rocket ship app icon for CodeFire.
 // Usage: swift generate-icon.swift [output-dir]
 
 import AppKit

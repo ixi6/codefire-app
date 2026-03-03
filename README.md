@@ -1,8 +1,8 @@
-# Context
+# CodeFire
 
 A native macOS companion app for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that gives you visibility and control across all your projects from a single interface.
 
-Context auto-discovers your Claude Code projects, tracks tasks and sessions, monitors live coding activity, and exposes project data back to Claude via MCP — creating a feedback loop where Claude knows what you're working on and can act on it.
+CodeFire auto-discovers your Claude Code projects, tracks tasks and sessions, monitors live coding activity, and exposes project data back to Claude via MCP — creating a feedback loop where Claude knows what you're working on and can act on it.
 
 ## What It Does
 
@@ -36,7 +36,7 @@ Context auto-discovers your Claude Code projects, tracks tasks and sessions, mon
 
 ## MCP Server
 
-Context includes a companion MCP server (`ContextMCP`) that exposes your project data to Claude Code. When configured, Claude can:
+CodeFire includes a companion MCP server (`CodeFireMCP`) that exposes your project data to Claude Code. When configured, Claude can:
 
 - List and manage tasks (create, update status, add notes)
 - Read project notes and search across them
@@ -44,7 +44,7 @@ Context includes a companion MCP server (`ContextMCP`) that exposes your project
 - Query session history
 - Work with client groupings
 
-This creates a powerful loop: you manage work in Context, and Claude has full awareness of that work during coding sessions.
+This creates a powerful loop: you manage work in CodeFire, and Claude has full awareness of that work during coding sessions.
 
 ### MCP Configuration
 
@@ -53,8 +53,8 @@ Add to `~/.claude/settings.json`:
 ```json
 {
   "mcpServers": {
-    "context-tasks": {
-      "command": "/Applications/Context.app/Contents/MacOS/ContextMCP"
+    "codefire": {
+      "command": "/Applications/CodeFire.app/Contents/MacOS/CodeFireMCP"
     }
   }
 }
@@ -75,22 +75,22 @@ cd claude-context-tasks
 bash scripts/package-app.sh
 ```
 
-This builds a release binary, generates the app icon, assembles `Context.app`, and codesigns it. The output lands in `build/Context.app`.
+This builds a release binary, generates the app icon, assembles `CodeFire.app`, and codesigns it. The output lands in `build/CodeFire.app`.
 
 To install:
 
 ```bash
-cp -r build/Context.app /Applications/
+cp -r build/CodeFire.app /Applications/
 ```
 
 ## Architecture
 
-Context is a pure Swift Package Manager project with two executable targets:
+CodeFire is a pure Swift Package Manager project with two executable targets:
 
 | Target | Description |
 |--------|-------------|
-| `Context` | Main GUI app — SwiftUI + AppKit, no Xcode project needed |
-| `ContextMCP` | Standalone MCP server binary, communicates via stdio |
+| `CodeFire` | Main GUI app — SwiftUI + AppKit, no Xcode project needed |
+| `CodeFireMCP` | Standalone MCP server binary, communicates via stdio |
 
 ### Dependencies
 
@@ -118,15 +118,15 @@ No Electron. No web views (except the built-in browser). No node_modules. The en
 
 ### Data Storage
 
-All data lives in `~/Library/Application Support/Context/context.db` — a single SQLite database shared by both the GUI app and the MCP server. MCP connection status files are written to `~/Library/Application Support/Context/mcp-connections/`.
+All data lives in `~/Library/Application Support/CodeFire/codefire.db` — a single SQLite database shared by both the GUI app and the MCP server. MCP connection status files are written to `~/Library/Application Support/CodeFire/mcp-connections/`.
 
 ## Project Structure
 
 ```
 Context/
   Sources/
-    Context/           # Main app target
-      ContextApp.swift
+    CodeFire/           # Main app target
+      CodeFireApp.swift
       Views/
         Browser/       # Built-in WebKit browser
         Chat/          # Claude chat drawer
@@ -144,7 +144,7 @@ Context/
         AppState.swift
       Services/        # All backend services
       Models/          # GRDB data models
-    ContextMCP/        # MCP server target
+    CodeFireMCP/        # MCP server target
       main.swift
   Package.swift
 scripts/
