@@ -34,7 +34,14 @@ echo "  MCP binary: $(du -h "$MCP_BINARY_PATH" | awk '{print $1}')"
 echo "[2/5] Generating app icon..."
 ICON_WORK="$BUILD_DIR/icon_work"
 mkdir -p "$ICON_WORK"
-swift "$SCRIPT_DIR/generate-icon.swift" "$ICON_WORK"
+CUSTOM_ICON="$PROJECT_DIR/assets/AppIcon.png"
+if [ -f "$CUSTOM_ICON" ]; then
+    cp "$CUSTOM_ICON" "$ICON_WORK/icon_1024.png"
+    echo "  Using custom icon from assets/AppIcon.png"
+else
+    swift "$SCRIPT_DIR/generate-icon.swift" "$ICON_WORK"
+    echo "  Generated programmatic icon (place assets/AppIcon.png to use a custom icon)"
+fi
 
 # Step 3: Create iconset
 echo "[3/5] Creating iconset..."
