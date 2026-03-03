@@ -36,6 +36,12 @@ export type SessionChannel =
 
 export type ClientChannel = 'clients:list' | 'clients:get' | 'clients:create'
 
+export type WindowChannel =
+  | 'window:openProject'
+  | 'window:closeProject'
+  | 'window:getProjectWindows'
+  | 'window:focusMain'
+
 export type IpcChannel =
   | ProjectChannel
   | TaskChannel
@@ -43,6 +49,7 @@ export type IpcChannel =
   | NoteChannel
   | SessionChannel
   | ClientChannel
+  | WindowChannel
 
 // ─── Electron API ────────────────────────────────────────────────────────────
 

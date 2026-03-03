@@ -143,4 +143,14 @@ export const api = {
     create: (data: { name: string; color?: string }) =>
       invoke('clients:create', data) as Promise<Client>,
   },
+
+  windows: {
+    openProject: (projectId: string) =>
+      invoke('window:openProject', projectId) as Promise<{ windowId: number }>,
+    closeProject: (projectId: string) =>
+      invoke('window:closeProject', projectId) as Promise<void>,
+    getProjectWindows: () =>
+      invoke('window:getProjectWindows') as Promise<string[]>,
+    focusMain: () => invoke('window:focusMain') as Promise<void>,
+  },
 }
