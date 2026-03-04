@@ -11,6 +11,8 @@ import { registerGitHandlers } from './git-handlers'
 import { registerSearchHandlers } from './search-handlers'
 import { registerGitHubHandlers } from './github-handlers'
 import { registerGmailHandlers } from './gmail-handlers'
+import { registerFileHandlers } from './file-handlers'
+import { registerServiceHandlers } from './service-handlers'
 import type { WindowManager } from '../windows/WindowManager'
 import type { TerminalService } from '../services/TerminalService'
 import type { GitService } from '../services/GitService'
@@ -53,4 +55,6 @@ export function registerAllHandlers(
   if (searchEngine && contextEngine) {
     registerSearchHandlers(db, searchEngine, contextEngine)
   }
+  registerFileHandlers()
+  registerServiceHandlers()
 }

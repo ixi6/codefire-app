@@ -8,6 +8,7 @@ import DashboardView from '@renderer/views/DashboardView'
 import SessionsView from '@renderer/views/SessionsView'
 import TasksView from '@renderer/views/TasksView'
 import NotesView from '@renderer/views/NotesView'
+import FilesView from '@renderer/views/FilesView'
 
 interface ProjectLayoutProps {
   projectId: string
@@ -88,6 +89,8 @@ export default function ProjectLayout({ projectId }: ProjectLayoutProps) {
         return <TasksView projectId={pid} />
       case 'Notes':
         return <NotesView projectId={pid} />
+      case 'Files':
+        return <FilesView projectId={pid} projectPath={project!.path} />
       default:
         return (
           <div className="flex-1 p-4 overflow-y-auto">

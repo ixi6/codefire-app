@@ -61,6 +61,10 @@ export type GitHubChannel =
   | 'github:listIssues'
   | 'github:listCommits'
 
+export type FileChannel = 'files:list' | 'files:read' | 'files:write'
+
+export type ServiceChannel = 'services:detect'
+
 export type SearchChannel = 'search:query' | 'search:reindex'
 
 export type GmailChannel =
@@ -95,6 +99,8 @@ export type IpcChannel =
   | GitHubChannel
   | SearchChannel
   | GmailChannel
+  | FileChannel
+  | ServiceChannel
 
 // ─── Electron API ────────────────────────────────────────────────────────────
 

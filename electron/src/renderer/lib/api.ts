@@ -154,6 +154,30 @@ export const api = {
     focusMain: () => invoke('window:focusMain') as Promise<void>,
   },
 
+  files: {
+    list: (dirPath: string) =>
+      invoke('files:list', dirPath) as Promise<
+        Array<{ name: string; path: string; isDirectory: boolean; size?: number }>
+      >,
+    read: (filePath: string) =>
+      invoke('files:read', filePath) as Promise<string>,
+    write: (filePath: string, content: string) =>
+      invoke('files:write', filePath, content) as Promise<void>,
+  },
+
+  services: {
+    detect: (projectPath: string) =>
+      invoke('services:detect', projectPath) as Promise<
+        Array<{
+          name: string
+          configFile: string
+          configPath: string
+          dashboardUrl: string | null
+          icon: string
+        }>
+      >,
+  },
+
   git: {
     status: (projectPath: string) =>
       invoke('git:status', projectPath) as Promise<{
