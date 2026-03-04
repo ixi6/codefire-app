@@ -85,6 +85,15 @@ export type ImageChannel =
   | 'images:create'
   | 'images:delete'
 
+export type RecordingChannel =
+  | 'recordings:list'
+  | 'recordings:get'
+  | 'recordings:create'
+  | 'recordings:update'
+  | 'recordings:delete'
+  | 'recordings:saveAudio'
+  | 'recordings:transcribe'
+
 export type SearchChannel = 'search:query' | 'search:reindex'
 
 export type GmailChannel =
@@ -124,6 +133,7 @@ export type IpcChannel =
   | RulesChannel
   | ServiceChannel
   | ImageChannel
+  | RecordingChannel
 
 // ─── Electron API ────────────────────────────────────────────────────────────
 

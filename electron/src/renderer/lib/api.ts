@@ -6,6 +6,7 @@ import type {
   Session,
   Client,
   GeneratedImage,
+  Recording,
 } from '@shared/models'
 
 const invoke = window.api.invoke
@@ -252,6 +253,31 @@ export const api = {
     }) => invoke('images:create', data) as Promise<GeneratedImage>,
     delete: (id: number) =>
       invoke('images:delete', id) as Promise<boolean>,
+  },
+
+  recordings: {
+    list: (projectId: string) =>
+      invoke('recordings:list', projectId) as Promise<Recording[]>,
+    get: (id: string) =>
+      invoke('recordings:get', id) as Promise<Recording | undefined>,
+    create: (data: { projectId: string; title: string }) =>
+      invoke('recordings:create', data) as Promise<Recording>,
+    update: (
+      id: string,
+      data: {
+        title?: string
+        duration?: number
+        transcript?: string
+        status?: string
+        errorMessage?: string
+      }
+    ) => invoke('recordings:update', id, data) as Promise<Recording | undefined>,
+    delete: (id: string) =>
+      invoke('recordings:delete', id) as Promise<boolean>,
+    saveAudio: (id: string, audioData: ArrayBuffer) =>
+      invoke('recordings:saveAudio', id, audioData) as Promise<boolean>,
+    transcribe: (id: string, apiKey: string) =>
+      invoke('recordings:transcribe', id, apiKey) as Promise<Recording>,
   },
 
   git: {
