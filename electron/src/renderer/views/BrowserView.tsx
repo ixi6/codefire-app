@@ -43,8 +43,10 @@ export default function BrowserView({ projectId: _projectId }: BrowserViewProps)
         const wv = document.createElement('webview') as any
         wv.setAttribute('src', tab.url)
         wv.setAttribute('allowpopups', 'true')
+        wv.setAttribute('partition', 'persist:browser')
         wv.style.width = '100%'
         wv.style.height = '100%'
+        wv.style.border = 'none'
         wv.style.display = tab.id === activeTabId ? 'flex' : 'none'
 
         wv.addEventListener('page-title-updated', (e: any) => {
@@ -64,6 +66,15 @@ export default function BrowserView({ projectId: _projectId }: BrowserViewProps)
           if (tab.id === activeTabId) {
             setCanGoBack(wv.canGoBack())
             setCanGoForward(wv.canGoForward())
+          }
+        })
+        wv.addEventListener('did-fail-load', (e: any) => {
+          if (e.errorCode !== -3) {
+            // -3 is ERR_ABORTED (navigation cancelled), ignore it
+            updateTab(tab.id, {
+              isLoading: false,
+              title: `Error: ${e.errorDescription || 'Failed to load'}`,
+            })
           }
         })
         wv.addEventListener('console-message', (e: any) => {

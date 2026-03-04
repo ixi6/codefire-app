@@ -253,6 +253,17 @@ export const api = {
     }) => invoke('images:create', data) as Promise<GeneratedImage>,
     delete: (id: number) =>
       invoke('images:delete', id) as Promise<boolean>,
+    generate: (data: {
+      projectId: string
+      prompt: string
+      apiKey: string
+      aspectRatio?: string
+      imageSize?: string
+    }) =>
+      invoke('images:generate', data) as Promise<{
+        error: string | null
+        image: GeneratedImage | null
+      }>,
   },
 
   recordings: {

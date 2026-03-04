@@ -13,7 +13,7 @@ export function useBrowserTabs() {
   const [tabs, setTabs] = useState<BrowserTab[]>([
     {
       id: `tab-${++tabCounter}`,
-      url: 'about:blank',
+      url: 'https://www.google.com',
       title: 'New Tab',
       isLoading: false,
     },
