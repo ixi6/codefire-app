@@ -7,6 +7,9 @@ import type {
   Client,
   GeneratedImage,
   Recording,
+  GmailAccount,
+  WhitelistRule,
+  ProcessedEmail,
 } from '@shared/models'
 
 const invoke = window.api.invoke
@@ -317,6 +320,29 @@ export const api = {
       invoke('git:unstage', projectPath, files) as Promise<void>,
     commit: (projectPath: string, message: string) =>
       invoke('git:commit', projectPath, message) as Promise<{ hash: string }>,
+  },
+
+  gmail: {
+    listAccounts: () =>
+      invoke('gmail:listAccounts') as Promise<GmailAccount[]>,
+    authenticate: () =>
+      invoke('gmail:authenticate') as Promise<GmailAccount>,
+    removeAccount: (accountId: string) =>
+      invoke('gmail:removeAccount', accountId) as Promise<{ success: boolean }>,
+    listRules: () =>
+      invoke('gmail:listRules') as Promise<WhitelistRule[]>,
+    addRule: (data: {
+      pattern: string
+      clientId?: string
+      priority?: number
+      note?: string
+    }) => invoke('gmail:addRule', data) as Promise<WhitelistRule>,
+    removeRule: (ruleId: string) =>
+      invoke('gmail:removeRule', ruleId) as Promise<{ success: boolean }>,
+    pollEmails: (accountId: string) =>
+      invoke('gmail:pollEmails', accountId) as Promise<ProcessedEmail[]>,
+    listRecentEmails: () =>
+      invoke('gmail:listRecentEmails') as Promise<ProcessedEmail[]>,
   },
 
   github: {

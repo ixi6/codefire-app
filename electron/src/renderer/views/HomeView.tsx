@@ -2,6 +2,7 @@ import { Group, Panel, Separator } from 'react-resizable-panels'
 import { useGlobalTasks } from '@renderer/hooks/useGlobalTasks'
 import KanbanBoard from '@renderer/components/Kanban/KanbanBoard'
 import ProjectTaskSummary from '@renderer/components/Home/ProjectTaskSummary'
+import RecentEmails from '@renderer/components/Home/RecentEmails'
 import { ListTodo } from 'lucide-react'
 
 export default function HomeView() {
@@ -69,9 +70,17 @@ export default function HomeView() {
 
           <Separator className="h-[2px] bg-neutral-800 hover:bg-codefire-orange active:bg-codefire-orange transition-colors duration-150" />
 
-          {/* Bottom: Project Task Summary */}
-          <Panel id="project-summary" defaultSize="35%" minSize="15%">
-            <ProjectTaskSummary />
+          {/* Bottom: Project Summary + Recent Emails side by side */}
+          <Panel id="bottom-panel" defaultSize="35%" minSize="15%">
+            <Group orientation="horizontal" id="bottom-split">
+              <Panel id="project-summary" defaultSize="60%" minSize="30%">
+                <ProjectTaskSummary />
+              </Panel>
+              <Separator className="w-[2px] bg-neutral-800 hover:bg-codefire-orange active:bg-codefire-orange transition-colors duration-150" />
+              <Panel id="recent-emails" defaultSize="40%" minSize="20%">
+                <RecentEmails />
+              </Panel>
+            </Group>
           </Panel>
         </Group>
       </div>

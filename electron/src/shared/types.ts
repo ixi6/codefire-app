@@ -84,6 +84,7 @@ export type ImageChannel =
   | 'images:get'
   | 'images:create'
   | 'images:delete'
+  | 'images:generate'
 
 export type RecordingChannel =
   | 'recordings:list'
@@ -104,6 +105,7 @@ export type GmailChannel =
   | 'gmail:addRule'
   | 'gmail:removeRule'
   | 'gmail:pollEmails'
+  | 'gmail:listRecentEmails'
 
 /** Channels that use ipcMain.handle (request-response) */
 export type TerminalHandleChannel = 'terminal:create' | 'terminal:kill'

@@ -42,4 +42,19 @@ export function registerGmailHandlers(gmailService: GmailService) {
   ipcMain.handle('gmail:pollEmails', async (_e, accountId: string) => {
     return gmailService.pollEmails(accountId)
   })
+
+  ipcMain.handle('gmail:listRecentEmails', () => {
+    // Get all accounts and merge their emails
+    const accounts = gmailService.listAccounts()
+    const dao = (gmailService as any).gmailDAO
+    const allEmails: any[] = []
+    for (const account of accounts) {
+      allEmails.push(...dao.listProcessedEmails(account.id))
+    }
+    allEmails.sort(
+      (a: any, b: any) =>
+        new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()
+    )
+    return allEmails.slice(0, 100)
+  })
 }
