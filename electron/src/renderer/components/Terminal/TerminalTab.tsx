@@ -32,7 +32,9 @@ export default function TerminalTab({ terminalId, isActive }: TerminalTabProps) 
     const terminal = new Terminal({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: '"SF Mono", "Menlo", "Monaco", "Courier New", monospace',
+      fontFamily: '"SF Mono", "Menlo", "Monaco", "Cascadia Code", "Consolas", "Courier New", monospace',
+      rightClickSelectsWord: true,
+      allowProposedApi: true,
       theme: {
         background: '#171717',
         foreground: '#e5e5e5',
@@ -74,6 +76,41 @@ export default function TerminalTab({ terminalId, isActive }: TerminalTabProps) 
     } catch {
       // Container may not be visible yet
     }
+
+    // ─── Clipboard: Ctrl+Shift+C to copy, Ctrl+Shift+V to paste ──────────
+    terminal.attachCustomKeyEventHandler((event) => {
+      // Ctrl+Shift+C: copy selection
+      if (event.ctrlKey && event.shiftKey && event.key === 'C' && event.type === 'keydown') {
+        const selection = terminal.getSelection()
+        if (selection) {
+          navigator.clipboard.writeText(selection)
+        }
+        return false
+      }
+      // Ctrl+Shift+V: paste
+      if (event.ctrlKey && event.shiftKey && event.key === 'V' && event.type === 'keydown') {
+        navigator.clipboard.readText().then((text) => {
+          window.api.send('terminal:write', terminalId, text)
+        })
+        return false
+      }
+      // Ctrl+C with selection: copy instead of sending SIGINT
+      if (event.ctrlKey && !event.shiftKey && event.key === 'c' && event.type === 'keydown') {
+        if (terminal.hasSelection()) {
+          navigator.clipboard.writeText(terminal.getSelection())
+          terminal.clearSelection()
+          return false
+        }
+      }
+      // Ctrl+V: paste
+      if (event.ctrlKey && !event.shiftKey && event.key === 'v' && event.type === 'keydown') {
+        navigator.clipboard.readText().then((text) => {
+          window.api.send('terminal:write', terminalId, text)
+        })
+        return false
+      }
+      return true
+    })
 
     // ─── Keystrokes → main process ────────────────────────────────────────
     const onDataDisposable = terminal.onData((data) => {

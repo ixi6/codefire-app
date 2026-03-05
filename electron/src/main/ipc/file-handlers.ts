@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, dialog, BrowserWindow } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -30,6 +30,16 @@ export interface FileEntry {
  * Register IPC handlers for file system operations.
  */
 export function registerFileHandlers() {
+  ipcMain.handle('dialog:selectFolder', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const options = { properties: ['openDirectory'] as ('openDirectory')[] }
+    const result = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options)
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
   ipcMain.handle(
     'files:list',
     (_event, dirPath: string): FileEntry[] => {
