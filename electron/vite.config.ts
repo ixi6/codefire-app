@@ -1,0 +1,49 @@
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import electron from 'vite-plugin-electron/simple'
+import path from 'path'
+
+export default defineConfig({
+  plugins: [
+    tailwindcss(),
+    react(),
+    electron({
+      main: {
+        entry: 'src/main/index.ts',
+        vite: {
+          resolve: {
+            alias: {
+              '@shared': path.resolve(__dirname, 'src/shared'),
+            },
+          },
+          build: {
+            outDir: 'dist-electron/main',
+            rollupOptions: {
+              external: ['better-sqlite3', 'node-pty'],
+            },
+          },
+        },
+      },
+      preload: {
+        input: 'src/preload/index.ts',
+        vite: {
+          resolve: {
+            alias: {
+              '@shared': path.resolve(__dirname, 'src/shared'),
+            },
+          },
+          build: {
+            outDir: 'dist-electron/preload',
+          },
+        },
+      },
+    }),
+  ],
+  resolve: {
+    alias: {
+      '@shared': path.resolve(__dirname, 'src/shared'),
+      '@renderer': path.resolve(__dirname, 'src/renderer'),
+    },
+  },
+})
