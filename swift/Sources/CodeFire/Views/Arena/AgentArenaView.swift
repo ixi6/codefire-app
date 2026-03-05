@@ -6,8 +6,10 @@ import Combine
 /// Pushes agent state from AgentArenaDataSource to the renderer via JS bridge.
 struct AgentArenaView: View {
     @EnvironmentObject var liveMonitor: LiveSessionMonitor
+    @StateObject private var agentMonitor = AgentMonitor()
     @StateObject private var dataSource = AgentArenaDataSource()
     @State private var isFloating = true
+    @State private var isBound = false
 
     // The WKWebView reference for JS evaluation
     @State private var webViewRef: WKWebView?
@@ -31,7 +33,16 @@ struct AgentArenaView: View {
         }
         .background(Color.black)
         .onAppear {
+            if !isBound {
+                // Start global monitoring (scans all processes for Claude, not tied to one shell)
+                agentMonitor.startGlobal()
+                dataSource.bind(agentMonitor: agentMonitor, liveMonitor: liveMonitor)
+                isBound = true
+            }
             startPushTimer()
+        }
+        .onDisappear {
+            agentMonitor.stop()
         }
         .onReceive(dataSource.$arenaState) { _ in
             pushStateToWebView()
