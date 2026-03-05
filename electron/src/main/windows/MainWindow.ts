@@ -30,13 +30,14 @@ export class MainWindow {
       minWidth: 900,
       minHeight: 600,
       titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-      frame: process.platform === 'darwin',
+      frame: true,
       backgroundColor: '#171717',
       show: false,
       webPreferences: {
         preload: path.join(__dirname, '../preload/index.js'),
         contextIsolation: true,
         nodeIntegration: false,
+        sandbox: false,
       },
     })
 
@@ -64,7 +65,7 @@ export class MainWindow {
   private loadContent(win: BrowserWindow): void {
     if (process.env.VITE_DEV_SERVER_URL) {
       win.loadURL(process.env.VITE_DEV_SERVER_URL)
-      win.webContents.openDevTools()
+      // win.webContents.openDevTools({ mode: 'detach' })
     } else {
       win.loadFile(path.join(process.env.DIST!, 'index.html'))
     }

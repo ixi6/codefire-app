@@ -32,12 +32,20 @@ export class TerminalService {
         ? 'powershell.exe'
         : process.env.SHELL || '/bin/zsh'
 
+    // Clean environment: remove vars that make Claude Code think it's nested
+    const cleanEnv = { ...process.env } as Record<string, string>
+    delete cleanEnv.ELECTRON_RUN_AS_NODE
+    delete cleanEnv.CLAUDE_CODE_ENTRYPOINT
+    delete cleanEnv.CLAUDE_SPAWNED
+    delete cleanEnv.CLAUDECODE
+    cleanEnv.TERM = 'xterm-256color'
+
     const term = pty.spawn(shell, [], {
       name: 'xterm-256color',
       cols: 80,
       rows: 24,
       cwd: projectPath,
-      env: { ...process.env, TERM: 'xterm-256color' } as Record<string, string>,
+      env: cleanEnv,
     })
 
     this.sessions.set(id, { id, pty: term, projectPath })

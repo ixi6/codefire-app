@@ -35,11 +35,14 @@ export default function Sidebar() {
     load()
   }, [load])
 
+  // Filter out the internal global project from display
+  const displayProjects = projects.filter((p) => p.id !== '__global__')
+
   // Group projects by client
   const clientProjectMap = new Map<string, Project[]>()
   const ungrouped: Project[] = []
 
-  for (const project of projects) {
+  for (const project of displayProjects) {
     if (project.clientId) {
       const list = clientProjectMap.get(project.clientId) ?? []
       list.push(project)
@@ -49,24 +52,25 @@ export default function Sidebar() {
     }
   }
 
-  // Recent projects: last 10 opened, regardless of client
-  const recentProjects = [...projects]
-    .filter((p) => p.lastOpened)
-    .sort((a, b) => new Date(b.lastOpened!).getTime() - new Date(a.lastOpened!).getTime())
-    .slice(0, 10)
-
   const handleProjectClick = (_projectId: string) => {
     // Window opening is handled inside ProjectItem
   }
 
   async function handleOpenFolder() {
-    // Use Electron's dialog via IPC — we need to add a handler for this
-    // For now, fall back to prompt
-    const folderPath = window.prompt('Enter project folder path:')
-    if (!folderPath) return
-    const name = folderPath.split('/').filter(Boolean).pop() ?? folderPath
-    await api.projects.create({ name, path: folderPath })
-    load()
+    try {
+      const folderPath = await api.dialog.selectFolder()
+      if (!folderPath) return
+      // Check if project already exists for this path
+      const existing = await api.projects.getByPath(folderPath)
+      if (!existing) {
+        const sep = folderPath.includes('\\') ? '\\' : '/'
+        const name = folderPath.split(sep).filter(Boolean).pop() ?? folderPath
+        await api.projects.create({ name, path: folderPath })
+      }
+    } catch (err) {
+      console.error('Failed to open folder:', err)
+    }
+    await load()
   }
 
   async function handleAddGroup() {
@@ -76,10 +80,12 @@ export default function Sidebar() {
     load()
   }
 
+  const isMac = navigator.platform.toUpperCase().includes('MAC')
+
   return (
     <div className="h-full flex flex-col bg-neutral-950">
       {/* macOS drag region */}
-      <div className="drag-region h-7 flex-shrink-0" />
+      {isMac && <div className="drag-region h-7 flex-shrink-0" />}
 
       {/* Logo */}
       <div className="px-3 pb-2 flex items-center gap-1.5">
@@ -131,15 +137,15 @@ export default function Sidebar() {
               )
             })}
 
-            {/* Recent Projects section */}
-            {recentProjects.length > 0 && (
+            {/* Projects (ungrouped) */}
+            {ungrouped.length > 0 && (
               <>
                 <div className="px-3 py-1.5 mt-1 flex items-center">
                   <span className="text-[11px] font-semibold text-neutral-600 uppercase tracking-wider">
-                    Recent Projects
+                    Projects
                   </span>
                 </div>
-                {recentProjects.map((project) => (
+                {ungrouped.map((project) => (
                   <ProjectItem
                     key={project.id}
                     project={project}
@@ -149,21 +155,8 @@ export default function Sidebar() {
               </>
             )}
 
-            {/* Ungrouped projects (no client) when no recent */}
-            {ungrouped.length > 0 && recentProjects.length === 0 && (
-              <div>
-                {ungrouped.map((project) => (
-                  <ProjectItem
-                    key={project.id}
-                    project={project}
-                    onClick={() => handleProjectClick(project.id)}
-                  />
-                ))}
-              </div>
-            )}
-
             {/* Empty state */}
-            {projects.length === 0 && (
+            {displayProjects.length === 0 && (
               <div className="px-3 py-4 text-center">
                 <p className="text-xs text-neutral-600">No projects yet</p>
                 <p className="text-[10px] text-neutral-700 mt-1">

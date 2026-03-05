@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3'
+import { migrations as defaultMigrations } from './migrations'
 
 export interface Migration {
   version: number
@@ -13,18 +14,7 @@ export class Migrator {
     private db: Database.Database,
     migrations?: Migration[]
   ) {
-    this.migrations = migrations ?? []
-
-    // If no migrations were explicitly passed, try to load from the migrations module
-    if (!migrations) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const mod = require('./migrations')
-        if (mod.migrations) this.migrations = mod.migrations
-      } catch {
-        // migrations module not available (e.g., during testing)
-      }
-    }
+    this.migrations = migrations ?? defaultMigrations
   }
 
   migrate(): void {

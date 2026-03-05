@@ -2,13 +2,15 @@ import { Group, Panel, Separator } from 'react-resizable-panels'
 import Sidebar from '@renderer/components/Sidebar/Sidebar'
 import HomeView from '@renderer/views/HomeView'
 
+const isMac = navigator.platform.toUpperCase().includes('MAC')
+
 export default function MainLayout() {
   return (
     <div className="h-screen w-screen overflow-hidden bg-neutral-900">
-      {/* Drag region for frameless window title bar */}
-      <div className="drag-region h-7 flex-shrink-0" />
+      {/* Drag region for macOS frameless window title bar */}
+      {isMac && <div className="drag-region h-7 flex-shrink-0" />}
 
-      <div className="flex flex-col" style={{ height: 'calc(100vh - 28px)' }}>
+      <div className="flex flex-col" style={{ height: isMac ? 'calc(100vh - 28px)' : '100vh' }}>
         <Group orientation="horizontal" id="main-layout">
           {/* Sidebar panel */}
           <Panel id="sidebar" defaultSize="22%" minSize="14%" maxSize="30%">

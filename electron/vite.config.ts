@@ -35,6 +35,9 @@ export default defineConfig({
           },
           build: {
             outDir: 'dist-electron/preload',
+            rollupOptions: {
+              external: ['electron', 'os'],
+            },
           },
         },
       },

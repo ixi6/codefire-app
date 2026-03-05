@@ -33,13 +33,14 @@ export class ProjectWindow {
       minWidth: 800,
       minHeight: 500,
       titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-      frame: process.platform === 'darwin',
+      frame: true,
       backgroundColor: '#171717',
       show: false,
       webPreferences: {
         preload: path.join(__dirname, '../preload/index.js'),
         contextIsolation: true,
         nodeIntegration: false,
+        sandbox: false,
         webviewTag: true,
       },
     })
@@ -76,7 +77,7 @@ export class ProjectWindow {
       const url = new URL(process.env.VITE_DEV_SERVER_URL)
       url.searchParams.set('projectId', this.projectId)
       win.loadURL(url.toString())
-      win.webContents.openDevTools()
+      // win.webContents.openDevTools()
     } else {
       win.loadFile(path.join(process.env.DIST!, 'index.html'), {
         query: { projectId: this.projectId },
