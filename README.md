@@ -10,19 +10,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/websitebutlers/codefire-app/releases/latest"><img src="https://img.shields.io/badge/download-macOS_Beta-orange?style=flat-square" alt="Download macOS"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License"></a>
+  <a href="https://github.com/websitebutlers/codefire-app/releases/latest"><img src="https://img.shields.io/badge/download-macOS-orange?style=flat-square" alt="Download macOS"></a>
+  <a href="https://github.com/websitebutlers/codefire-app/releases/latest"><img src="https://img.shields.io/badge/download-Windows-blue?style=flat-square" alt="Download Windows"></a>
+  <a href="https://github.com/websitebutlers/codefire-app/releases/latest"><img src="https://img.shields.io/badge/download-Linux-green?style=flat-square" alt="Download Linux"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square" alt="MIT License"></a>
 </p>
 
 ---
-
-## Platform Support
-
-| Platform | Technology | Status | Directory |
-|----------|-----------|--------|-----------|
-| **macOS** | Swift / SwiftUI | Beta | [`swift/`](swift/) |
-| **Windows** | Electron / React | Alpha | [`electron/`](electron/) |
-| **Linux** | Electron / React | Alpha | [`electron/`](electron/) |
 
 Both apps share the same SQLite database schema and MCP server protocol, so your tasks, notes, and project data work across platforms.
 
@@ -45,13 +39,22 @@ Your AI coding agent forgets everything between sessions. CodeFire fixes that. I
   <img src="assets/screenshot-01.png" alt="CodeFire — Planner view" width="100%">
 </p>
 
-## Quick Start
+## Download
 
-### macOS (Beta)
+| Platform | Download | Technology | Status |
+|----------|----------|-----------|--------|
+| **macOS** | [CodeFire-macOS.zip](https://github.com/websitebutlers/codefire-app/releases/latest/download/CodeFire-macOS.zip) | Swift / SwiftUI | Beta |
+| **Windows** | [CodeFire.Setup.exe](https://github.com/websitebutlers/codefire-app/releases/latest) | Electron / React | Alpha |
+| **Linux (AppImage)** | [CodeFire.AppImage](https://github.com/websitebutlers/codefire-app/releases/latest) | Electron / React | Alpha |
+| **Linux (deb)** | [codefire.deb](https://github.com/websitebutlers/codefire-app/releases/latest) | Electron / React | Alpha |
 
-Download `CodeFire.zip` from [GitHub Releases](https://github.com/websitebutlers/codefire-app/releases/latest), unzip, and drag to Applications. The app is signed and notarized by Apple.
+> **macOS:** Unzip and drag to Applications. Signed and notarized by Apple.
+> **Windows:** Run the installer. Requires Windows 10+.
+> **Linux:** `chmod +x CodeFire-*.AppImage && ./CodeFire-*.AppImage` or `sudo dpkg -i codefire-*.deb`
 
-**Build from source:**
+## Build from Source
+
+### macOS
 
 ```bash
 cd swift
@@ -60,12 +63,12 @@ swift build -c release
 
 See [`swift/README.md`](swift/) for full build and signing instructions.
 
-### Windows / Linux (Alpha)
+### Windows / Linux
 
 ```bash
 cd electron
 npm install
-npm run build
+npm run dist
 ```
 
 See [`electron/README.md`](electron/) for detailed setup and development instructions.
