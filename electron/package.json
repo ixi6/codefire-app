@@ -3,6 +3,7 @@
   "version": "1.0.4",
   "description": "CodeFire — Cross-platform companion for AI coding CLIs",
   "main": "dist-electron/main/index.js",
+  "repository": "github:websitebutlers/codefire-app",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -62,6 +63,7 @@
   "build": {
     "appId": "com.codefire.app",
     "productName": "CodeFire",
+    "publish": null,
     "directories": {
       "output": "release"
     },
