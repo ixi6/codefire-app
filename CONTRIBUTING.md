@@ -50,6 +50,10 @@ npm run dev
 
 Requires Node.js 18+.
 
+**Windows prerequisites:** The Electron app uses native modules (`better-sqlite3`, `node-pty`) that need to be compiled against Electron's Node headers. The `postinstall` script handles this automatically, but you need:
+- **Python 3.12** (3.13+ may not work due to removed `distutils` module)
+- **Visual Studio Build Tools** with the "Desktop development with C++" workload (VS 2019, 2022, or 2026)
+
 ### Running Tests
 
 ```bash
