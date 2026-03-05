@@ -20,19 +20,37 @@ NOTARY_PROFILE="CodeFire"
 echo "=== Packaging $APP_NAME.app (v$VERSION) ==="
 echo ""
 
-# Step 1: Build release binaries
-echo "[1/7] Building release binaries..."
-cd "$PROJECT_DIR/Context"
-swift build -c release 2>&1 | tail -3
-BINARY_PATH=".build/release/CodeFire"
-MCP_BINARY_PATH=".build/release/CodeFireMCP"
+# Step 1: Build universal release binaries (arm64 + x86_64)
+echo "[1/7] Building universal release binaries..."
+cd "$PROJECT_DIR/swift"
 
-if [ ! -f "$BINARY_PATH" ]; then
-    echo "ERROR: Binary not found at $BINARY_PATH"
-    exit 1
-fi
-echo "  App binary: $(du -h "$BINARY_PATH" | awk '{print $1}')"
-echo "  MCP binary: $(du -h "$MCP_BINARY_PATH" | awk '{print $1}')"
+echo "  Building arm64..."
+swift build -c release --arch arm64 2>&1 | tail -3
+echo "  Building x86_64..."
+swift build -c release --arch x86_64 2>&1 | tail -3
+
+ARM_BINARY=".build/arm64-apple-macosx/release/CodeFire"
+X86_BINARY=".build/x86_64-apple-macosx/release/CodeFire"
+ARM_MCP=".build/arm64-apple-macosx/release/CodeFireMCP"
+X86_MCP=".build/x86_64-apple-macosx/release/CodeFireMCP"
+
+for bin in "$ARM_BINARY" "$X86_BINARY" "$ARM_MCP" "$X86_MCP"; do
+    if [ ! -f "$bin" ]; then
+        echo "ERROR: Binary not found at $bin"
+        exit 1
+    fi
+done
+
+echo "  Creating universal binaries with lipo..."
+mkdir -p "$BUILD_DIR/universal"
+lipo -create "$ARM_BINARY" "$X86_BINARY" -output "$BUILD_DIR/universal/CodeFire"
+lipo -create "$ARM_MCP" "$X86_MCP" -output "$BUILD_DIR/universal/CodeFireMCP"
+
+BINARY_PATH="$BUILD_DIR/universal/CodeFire"
+MCP_BINARY_PATH="$BUILD_DIR/universal/CodeFireMCP"
+
+echo "  App binary: $(du -h "$BINARY_PATH" | awk '{print $1}') (universal)"
+echo "  MCP binary: $(du -h "$MCP_BINARY_PATH" | awk '{print $1}') (universal)"
 
 # Step 2: Generate icon
 echo "[2/7] Generating app icon..."
@@ -173,7 +191,7 @@ echo "  Signature verified"
 
 # Step 6: Create zip and notarize
 echo "[6/7] Notarizing..."
-ZIP_PATH="$BUILD_DIR/$APP_NAME.zip"
+ZIP_PATH="$BUILD_DIR/$APP_NAME-macOS.zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "$ZIP_PATH"
 echo "  Archive: $(du -h "$ZIP_PATH" | awk '{print $1}')"
 
@@ -203,6 +221,7 @@ echo "  Final archive: $(du -h "$ZIP_PATH" | awk '{print $1}')"
 
 # Cleanup
 rm -rf "$ICON_WORK"
+rm -rf "$BUILD_DIR/universal"
 rm -f "$ENTITLEMENTS"
 rm -f "$BUILD_DIR/notarize.log"
 
