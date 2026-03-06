@@ -17,7 +17,7 @@ export class LiveSessionWatcher {
     const claudeDir = path.join(os.homedir(), '.claude', 'projects')
     if (!fs.existsSync(claudeDir)) return null
 
-    let newest: { path: string; mtime: number } | null = null
+    let newest: { path: string; mtime: number } | null = null as { path: string; mtime: number } | null
 
     const walk = (dir: string) => {
       try {
