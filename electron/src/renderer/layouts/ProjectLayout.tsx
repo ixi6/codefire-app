@@ -21,7 +21,9 @@ import CodeFireChat from '@renderer/components/Chat/CodeFireChat'
 import BriefingDrawer from '@renderer/components/Dashboard/BriefingDrawer'
 import AgentStatusBar from '@renderer/components/StatusBar/AgentStatusBar'
 import { ProjectHeaderLeft, ProjectHeaderRight } from '@renderer/components/Header/ProjectHeaderBar'
+import ProjectDropdown from '@renderer/components/Header/ProjectDropdown'
 import { useMCPStatus } from '@renderer/hooks/useMCPStatus'
+import logoIcon from '../../../resources/icon.png'
 
 interface ProjectLayoutProps {
   projectId: string
@@ -181,8 +183,9 @@ export default function ProjectLayout({ projectId }: ProjectLayoutProps) {
       <div className="flex flex-col" style={{ height: isMac ? 'calc(100vh - 28px)' : '100vh' }}>
         {/* Top bar with project indicators */}
         <div className="flex items-center gap-3 px-4 py-2 border-b border-neutral-800 bg-neutral-950 shrink-0">
-          <span className="text-codefire-orange text-sm" aria-hidden>&#9632;</span>
+          <img src={logoIcon} alt="CodeFire" className="w-4 h-4" />
           <span className="text-sm font-semibold text-neutral-200 tracking-tight">CodeFire</span>
+          <ProjectDropdown />
           <div className="w-px h-4 bg-neutral-700" />
           <ProjectHeaderLeft projectName={project.name} projectPath={project.path} />
           <div className="flex-1" />

@@ -62,6 +62,39 @@ export function registerTerminalHandlers(terminalService: TerminalService) {
     terminalService.write(id, data)
   })
 
+  ipcMain.on('terminal:writeToActive', (_event, data: string) => {
+    const ids = terminalService.getActiveIds()
+    if (ids.length > 0) {
+      terminalService.write(ids[0], data)
+    } else {
+      // No terminal exists yet — create one, wire it up, then write after shell initializes
+      const id = `__auto-term-${Date.now()}`
+      const cwd = process.env.HOME || process.env.USERPROFILE || '.'
+      terminalService.create(id, cwd)
+
+      const senderWindow = BrowserWindow.fromWebContents(_event.sender)
+      terminalService.onData(id, (output) => {
+        if (senderWindow && !senderWindow.isDestroyed()) {
+          senderWindow.webContents.send('terminal:data', id, output)
+        }
+      })
+      terminalService.onExit(id, (exitCode, signal) => {
+        if (senderWindow && !senderWindow.isDestroyed()) {
+          senderWindow.webContents.send('terminal:exit', id, exitCode, signal)
+        }
+        terminalService.kill(id)
+      })
+
+      // Notify renderer so it can add a tab for this terminal
+      if (senderWindow && !senderWindow.isDestroyed()) {
+        senderWindow.webContents.send('terminal:created', id)
+      }
+
+      // Wait for shell to initialize before writing the command
+      setTimeout(() => terminalService.write(id, data), 500)
+    }
+  })
+
   ipcMain.on(
     'terminal:resize',
     (_event, id: string, cols: number, rows: number) => {

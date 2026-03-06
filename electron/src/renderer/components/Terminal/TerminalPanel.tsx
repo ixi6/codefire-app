@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { MessageCircle, GripVertical } from 'lucide-react'
 import TerminalTab from './TerminalTab'
 
@@ -46,18 +46,18 @@ export default function TerminalPanel({ projectId, projectPath, showChat, onTogg
     y: number
     tabId: string
   } | null>(null)
+  const mountedRef = useRef(false)
 
   // ─── Create a new terminal tab ──────────────────────────────────────────
   const addTab = useCallback(async () => {
     const id = createTabId(projectId)
-    const label = `Terminal ${tabs.length + 1}`
 
     // Tell main process to create the PTY
     await window.api.invoke('terminal:create', id, projectPath)
 
-    setTabs((prev) => [...prev, { id, label }])
+    setTabs((prev) => [...prev, { id, label: `Terminal ${prev.length + 1}` }])
     setActiveTabId(id)
-  }, [projectId, projectPath, tabs.length])
+  }, [projectId, projectPath])
 
   // ─── Close a terminal tab ──────────────────────────────────────────────
   const closeTab = useCallback(
@@ -82,15 +82,12 @@ export default function TerminalPanel({ projectId, projectPath, showChat, onTogg
 
   // ─── Create first tab on mount ──────────────────────────────────────────
   useEffect(() => {
+    // Guard against React Strict Mode double-mount
+    if (mountedRef.current) return
+    mountedRef.current = true
+
     addTab()
 
-    // Cleanup: kill all terminals when panel unmounts
-    return () => {
-      // We can't use async in cleanup, so fire-and-forget
-      tabs.forEach((tab) => {
-        window.api.invoke('terminal:kill', tab.id).catch(() => {})
-      })
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -110,6 +107,24 @@ export default function TerminalPanel({ projectId, projectPath, showChat, onTogg
       (id: unknown) => {
         // Optionally auto-close the tab or just let the user see the exit message
         // For now, keep the tab open so the user sees the exit message
+      }
+    )
+    return removeListener
+  }, [])
+
+  // ─── Listen for auto-created terminals (from writeToActive fallback) ───
+  useEffect(() => {
+    const removeListener = window.api.on(
+      'terminal:created',
+      (id: unknown) => {
+        if (typeof id === 'string') {
+          setTabs((prev) => {
+            // Don't add if we already have it
+            if (prev.some((t) => t.id === id)) return prev
+            return [...prev, { id, label: `Terminal ${prev.length + 1}` }]
+          })
+          setActiveTabId(id)
+        }
       }
     )
     return removeListener

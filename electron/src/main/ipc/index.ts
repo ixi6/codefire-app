@@ -7,6 +7,7 @@ import { registerClientHandlers } from './client-handlers'
 import { registerWindowHandlers } from './window-handlers'
 import { registerTerminalHandlers } from './terminal-handlers'
 import { registerDiscoveryHandlers } from './discovery-handlers'
+import { discoverProjects, syncProjectsWithDatabase } from '../services/ProjectDiscovery'
 import { registerGitHandlers } from './git-handlers'
 import { registerSearchHandlers } from './search-handlers'
 import { registerGitHubHandlers } from './github-handlers'
@@ -78,5 +79,13 @@ export function registerAllHandlers(
   registerUpdateHandlers()
   if (mcpManager) {
     registerMCPHandlers(mcpManager)
+  }
+
+  // Run project discovery at startup to populate claudeProject links
+  try {
+    const discovered = discoverProjects()
+    syncProjectsWithDatabase(db, discovered)
+  } catch {
+    // Non-fatal — discovery will still work via IPC
   }
 }

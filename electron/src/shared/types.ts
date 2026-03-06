@@ -146,10 +146,10 @@ export type GmailChannel =
 export type TerminalHandleChannel = 'terminal:create' | 'terminal:kill'
 
 /** Channels that use ipcRenderer.send (fire-and-forget, renderer → main) */
-export type TerminalSendChannel = 'terminal:write' | 'terminal:resize'
+export type TerminalSendChannel = 'terminal:write' | 'terminal:writeToActive' | 'terminal:resize'
 
 /** Channels that use webContents.send (main → renderer) */
-export type TerminalReceiveChannel = 'terminal:data' | 'terminal:exit'
+export type TerminalReceiveChannel = 'terminal:data' | 'terminal:exit' | 'terminal:created'
 
 export type IpcChannel =
   | ProjectChannel
