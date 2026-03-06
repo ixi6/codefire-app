@@ -177,7 +177,6 @@ export type IpcChannel =
   | UpdateChannel
   | SettingsChannel
   | ArenaChannel
-  | DialogChannel
   | ShellChannel
 
 // ─── Electron API ────────────────────────────────────────────────────────────
