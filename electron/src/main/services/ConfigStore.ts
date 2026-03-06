@@ -53,6 +53,12 @@ export const APP_CONFIG_DEFAULTS: AppConfig = {
     'https://huggingface.co/blog/feed.xml',
   ],
   briefingSubreddits: ['programming', 'MachineLearning', 'LocalLLaMA'],
+
+  // Premium
+  premiumEnabled: false,
+  supabaseUrl: '',
+  supabaseAnonKey: '',
+  autoShareSessions: false,
 }
 
 function getConfigPath(): string {
