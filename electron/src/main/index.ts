@@ -14,6 +14,7 @@ import { DeepLinkService } from './services/DeepLinkService'
 import { SearchEngine } from './services/SearchEngine'
 import { ContextEngine } from './services/ContextEngine'
 import { EmbeddingClient } from './services/EmbeddingClient'
+import { BrowserCommandExecutor } from './services/BrowserCommandExecutor'
 
 // Prevent crashes from uncaught errors
 process.on('uncaughtException', (err) => {
@@ -53,6 +54,9 @@ const mcpManager = new MCPServerManager()
 const embeddingClient = new EmbeddingClient(config.openRouterKey || undefined)
 const searchEngine = new SearchEngine(db, embeddingClient)
 const contextEngine = new ContextEngine(db)
+
+// Initialize browser command executor (polls browserCommands table for MCP browser tools)
+let browserExecutor: BrowserCommandExecutor | null = null
 
 // Initialize deep link service and register codefire:// protocol
 const deepLinkService = new DeepLinkService()
@@ -171,6 +175,10 @@ app.whenReady().then(() => {
 
   const mainWin = windowManager.createMainWindow()
 
+  // Start browser command executor for MCP browser tools
+  browserExecutor = new BrowserCommandExecutor(db)
+  browserExecutor.start()
+
   // Global shortcut: Ctrl+Shift+H to show/focus the planner window
   globalShortcut.register('CommandOrControl+Shift+H', () => {
     const win = windowManager.getMainWindow()
@@ -233,6 +241,7 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  if (browserExecutor) browserExecutor.stop()
   trayManager.destroy()
   terminalService.killAll()
   closeDatabase()
