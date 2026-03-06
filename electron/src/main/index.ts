@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, Menu, nativeImage, session } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, session } from 'electron'
 import path from 'path'
 import { getDatabase, closeDatabase } from './database/connection'
 import { registerAllHandlers } from './ipc'
@@ -110,6 +110,12 @@ app.on('open-url', (event, url) => {
 
 // Register all IPC handlers (including window, terminal, and git management)
 registerAllHandlers(db, windowManager, terminalService, gitService, undefined, gmailService, searchEngine, contextEngine, mcpManager)
+
+// Register Agent Arena handler
+import { openAgentArena } from './windows/AgentArenaWindow'
+ipcMain.handle('arena:open', () => {
+  openAgentArena()
+})
 
 let isQuitting = false
 

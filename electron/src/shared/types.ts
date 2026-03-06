@@ -127,7 +127,7 @@ export type DeepLinkReceiveChannel = 'deeplink:result'
 
 export type SettingsChannel = 'settings:get' | 'settings:set'
 
-export type DialogChannel = 'dialog:selectFolder'
+export type ArenaChannel = 'arena:open'
 
 export type SearchChannel = 'search:query' | 'search:reindex' | 'search:getIndexState' | 'search:clearIndex'
 
@@ -176,6 +176,7 @@ export type IpcChannel =
   | ChatChannel
   | UpdateChannel
   | SettingsChannel
+  | ArenaChannel
   | DialogChannel
   | ShellChannel
 
