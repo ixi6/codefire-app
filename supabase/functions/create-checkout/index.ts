@@ -61,8 +61,8 @@ serve(async (req: Request) => {
     // Parse request body
     const { teamId, plan, extraSeats = 0 } = await req.json()
 
-    if (!teamId || !plan || !['starter', 'agency'].includes(plan)) {
-      return new Response(JSON.stringify({ error: 'Invalid request. Required: teamId, plan (starter|agency)' }), {
+    if (!plan || !['starter', 'agency'].includes(plan)) {
+      return new Response(JSON.stringify({ error: 'Invalid request. Required: plan (starter|agency)' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -75,42 +75,71 @@ serve(async (req: Request) => {
       })
     }
 
-    // Verify user is team owner
-    const { data: team, error: teamError } = await supabaseAdmin
-      .from('teams')
-      .select('id, name, owner_id, stripe_customer_id')
-      .eq('id', teamId)
-      .single()
+    let customerId: string | null = null
+    const metadata: Record<string, string> = { plan, userId: user.id }
 
-    if (teamError || !team) {
-      return new Response(JSON.stringify({ error: 'Team not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    if (team.owner_id !== user.id) {
-      return new Response(JSON.stringify({ error: 'Only the team owner can manage billing' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    // Create or retrieve Stripe customer
-    let customerId = team.stripe_customer_id
-
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: user.email,
-        metadata: { teamId, supabaseUserId: user.id },
-        name: team.name,
-      })
-      customerId = customer.id
-
-      await supabaseAdmin
+    if (teamId) {
+      // ── Team-level checkout (existing team) ─────────────────────────
+      const { data: team, error: teamError } = await supabaseAdmin
         .from('teams')
-        .update({ stripe_customer_id: customerId })
+        .select('id, name, owner_id, stripe_customer_id')
         .eq('id', teamId)
+        .single()
+
+      if (teamError || !team) {
+        return new Response(JSON.stringify({ error: 'Team not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (team.owner_id !== user.id) {
+        return new Response(JSON.stringify({ error: 'Only the team owner can manage billing' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      customerId = team.stripe_customer_id
+
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user.email,
+          metadata: { teamId, supabaseUserId: user.id },
+          name: team.name,
+        })
+        customerId = customer.id
+
+        await supabaseAdmin
+          .from('teams')
+          .update({ stripe_customer_id: customerId })
+          .eq('id', teamId)
+      }
+
+      metadata.teamId = teamId
+    } else {
+      // ── User-level checkout (pre-team subscription) ─────────────────
+      const { data: profile } = await supabaseAdmin
+        .from('users')
+        .select('stripe_customer_id, display_name')
+        .eq('id', user.id)
+        .single()
+
+      customerId = profile?.stripe_customer_id ?? null
+
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user.email,
+          metadata: { supabaseUserId: user.id },
+          name: profile?.display_name || user.email,
+        })
+        customerId = customer.id
+
+        await supabaseAdmin
+          .from('users')
+          .update({ stripe_customer_id: customerId })
+          .eq('id', user.id)
+      }
     }
 
     // Build line items
@@ -130,12 +159,12 @@ serve(async (req: Request) => {
       customer: customerId,
       mode: 'subscription',
       line_items: lineItems,
-      success_url: `${appUrl}?success=true&team=${teamId}`,
-      cancel_url: `${appUrl}?canceled=true&team=${teamId}`,
+      success_url: `${appUrl}?success=true${teamId ? `&team=${teamId}` : ''}`,
+      cancel_url: `${appUrl}?canceled=true`,
       subscription_data: {
-        metadata: { teamId, plan },
+        metadata,
       },
-      metadata: { teamId, plan },
+      metadata,
     })
 
     return new Response(JSON.stringify({ url: session.url }), {

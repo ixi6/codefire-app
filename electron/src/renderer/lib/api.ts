@@ -490,12 +490,16 @@ export const api = {
       invoke('premium:removeMember', teamId, userId) as Promise<void>,
     acceptInvite: (token: string) =>
       invoke('premium:acceptInvite', token) as Promise<void>,
+    getMyInvites: () =>
+      invoke('premium:getMyInvites') as Promise<(TeamInvite & { teamName: string })[]>,
+    acceptInviteById: (inviteId: string) =>
+      invoke('premium:acceptInviteById', inviteId) as Promise<void>,
     syncProject: (teamId: string, projectId: string, name: string, repoUrl?: string) =>
       invoke('premium:syncProject', teamId, projectId, name, repoUrl) as Promise<void>,
     unsyncProject: (projectId: string) =>
       invoke('premium:unsyncProject', projectId) as Promise<void>,
-    createCheckout: (teamId: string, plan: 'starter' | 'agency', extraSeats?: number) =>
-      invoke('premium:createCheckout', teamId, plan, extraSeats) as Promise<{ url: string }>,
+    createCheckout: (teamIdOrNull: string | null, plan: 'starter' | 'agency', extraSeats?: number) =>
+      invoke('premium:createCheckout', teamIdOrNull, plan, extraSeats) as Promise<{ url: string }>,
     getBillingPortal: (teamId: string) =>
       invoke('premium:getBillingPortal', teamId) as Promise<{ url: string }>,
 

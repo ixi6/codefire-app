@@ -511,15 +511,17 @@ export const migrations: Migration[] = [
           entityType TEXT NOT NULL,
           localId TEXT NOT NULL,
           remoteId TEXT,
+          projectId TEXT,
           lastSyncedAt DATETIME,
           dirty INTEGER NOT NULL DEFAULT 0,
+          isDeleted INTEGER NOT NULL DEFAULT 0,
           PRIMARY KEY (entityType, localId)
         );
 
         CREATE TRIGGER IF NOT EXISTS sync_task_dirty_update
         AFTER UPDATE ON taskItems BEGIN
-          INSERT OR REPLACE INTO syncState (entityType, localId, remoteId, lastSyncedAt, dirty)
-          VALUES ('task', CAST(NEW.id AS TEXT),
+          INSERT OR REPLACE INTO syncState (entityType, localId, projectId, remoteId, lastSyncedAt, dirty)
+          VALUES ('task', CAST(NEW.id AS TEXT), NEW.projectId,
             (SELECT remoteId FROM syncState WHERE entityType='task' AND localId=CAST(NEW.id AS TEXT)),
             (SELECT lastSyncedAt FROM syncState WHERE entityType='task' AND localId=CAST(NEW.id AS TEXT)),
             1);
@@ -527,13 +529,48 @@ export const migrations: Migration[] = [
 
         CREATE TRIGGER IF NOT EXISTS sync_note_dirty_update
         AFTER UPDATE ON notes BEGIN
-          INSERT OR REPLACE INTO syncState (entityType, localId, remoteId, lastSyncedAt, dirty)
-          VALUES ('note', CAST(NEW.id AS TEXT),
+          INSERT OR REPLACE INTO syncState (entityType, localId, projectId, remoteId, lastSyncedAt, dirty)
+          VALUES ('note', CAST(NEW.id AS TEXT), NEW.projectId,
             (SELECT remoteId FROM syncState WHERE entityType='note' AND localId=CAST(NEW.id AS TEXT)),
             (SELECT lastSyncedAt FROM syncState WHERE entityType='note' AND localId=CAST(NEW.id AS TEXT)),
             1);
         END;
+
+        CREATE TRIGGER IF NOT EXISTS sync_task_note_dirty_insert
+        AFTER INSERT ON taskNotes BEGIN
+          INSERT OR REPLACE INTO syncState (entityType, localId, projectId, remoteId, lastSyncedAt, dirty)
+          VALUES ('taskNote', CAST(NEW.id AS TEXT),
+            (SELECT projectId FROM taskItems WHERE id = NEW.taskId),
+            NULL, NULL, 1);
+        END;
       `)
+    },
+  },
+
+  // Migration 22: Add repoUrl to projects
+  {
+    version: 22,
+    name: 'v21_addProjectRepoUrl',
+    up: (db) => {
+      db.exec(`ALTER TABLE projects ADD COLUMN repoUrl TEXT;`)
+    },
+  },
+
+  // Migration 23: Add mentions to taskNotes
+  {
+    version: 23,
+    name: 'v22_addTaskNoteMentions',
+    up: (db) => {
+      db.exec(`ALTER TABLE taskNotes ADD COLUMN mentions TEXT;`)
+    },
+  },
+
+  // Migration 24: Add updatedAt to taskItems
+  {
+    version: 24,
+    name: 'v23_addTaskUpdatedAt',
+    up: (db) => {
+      db.exec(`ALTER TABLE taskItems ADD COLUMN updatedAt DATETIME;`)
     },
   },
 ]

@@ -96,7 +96,10 @@ export class AuthService {
       }
     }
 
-    const subscriptionActive = !!grant || !!(team?.stripe_subscription_id)
+    // Subscription is active if team has one, user has one, or there's a grant
+    const subscriptionActive = !!grant
+      || !!(team?.stripe_subscription_id)
+      || !!(profile?.stripe_subscription_id)
 
     return {
       enabled: true,

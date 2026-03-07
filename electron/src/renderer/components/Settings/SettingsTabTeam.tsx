@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Users, UserPlus, Shield, Crown, LogOut, AlertCircle, Loader2, Trash2, CreditCard, Zap } from 'lucide-react'
+import { Users, UserPlus, Shield, Crown, LogOut, AlertCircle, Loader2, Trash2, CreditCard, Zap, Mail } from 'lucide-react'
 import type { AppConfig } from '@shared/models'
 import { Section, Toggle, TextInput } from './SettingsField'
 import { usePremium } from '../../hooks/usePremium'
@@ -12,9 +12,9 @@ interface Props {
 
 export default function SettingsTabTeam({ config, onChange }: Props) {
   const {
-    status, members, loading, error,
+    status, members, pendingInvites, loading, error,
     signIn, signUp, signOut,
-    createTeam, inviteMember, removeMember,
+    createTeam, inviteMember, removeMember, acceptInviteById,
   } = usePremium()
 
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
@@ -30,36 +30,6 @@ export default function SettingsTabTeam({ config, onChange }: Props) {
   const [extraSeats, setExtraSeats] = useState(0)
   const [billingLoading, setBillingLoading] = useState(false)
 
-  if (!config.premiumEnabled) {
-    return (
-      <div className="space-y-6">
-        <Section title="Team Collaboration (Premium)">
-          <div className="rounded-lg border border-neutral-700 bg-neutral-800/50 p-4 space-y-3">
-            <div className="flex items-start gap-3">
-              <Users className="w-5 h-5 text-codefire-orange mt-0.5 shrink-0" />
-              <div className="space-y-1">
-                <p className="text-xs text-neutral-200 font-medium">
-                  Enable team collaboration
-                </p>
-                <p className="text-[10px] text-neutral-500 leading-relaxed">
-                  Share projects, tasks, and notes with your team in real-time.
-                  Requires a CodeFire Teams account. Your data will be synced to the cloud.
-                  The free, open-source version is unaffected.
-                </p>
-              </div>
-            </div>
-            <Toggle
-              label="Enable premium features"
-              hint="Connects to CodeFire cloud for team sync"
-              value={config.premiumEnabled}
-              onChange={(v) => onChange({ premiumEnabled: v })}
-            />
-          </div>
-        </Section>
-      </div>
-    )
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -68,17 +38,18 @@ export default function SettingsTabTeam({ config, onChange }: Props) {
     )
   }
 
-  // Premium enabled but not authenticated — show sign in/up form
+  // ── Not authenticated: show sign in/up ──────────────────────────────────
   if (!status?.authenticated) {
     return (
       <div className="space-y-6">
-        <Section title="Team Collaboration">
-          <Toggle
-            label="Enable premium features"
-            hint="Connects to CodeFire cloud for team sync"
-            value={config.premiumEnabled}
-            onChange={(v) => onChange({ premiumEnabled: v })}
-          />
+        <Section title="Team Collaboration (Premium)">
+          <div className="flex items-start gap-3 mb-3">
+            <Users className="w-5 h-5 text-codefire-orange mt-0.5 shrink-0" />
+            <p className="text-[10px] text-neutral-500 leading-relaxed">
+              Share projects, tasks, and notes with your team in real-time.
+              Sign in or create an account to get started.
+            </p>
+          </div>
         </Section>
 
         <Section title={authMode === 'signin' ? 'Sign In' : 'Create Account'}>
@@ -122,6 +93,10 @@ export default function SettingsTabTeam({ config, onChange }: Props) {
                     } else {
                       await signIn(email, password)
                     }
+                    // Auto-enable premium on successful auth
+                    if (!config.premiumEnabled) {
+                      onChange({ premiumEnabled: true })
+                    }
                   } finally {
                     setSubmitting(false)
                   }
@@ -142,12 +117,15 @@ export default function SettingsTabTeam({ config, onChange }: Props) {
             </div>
           </div>
         </Section>
-
       </div>
     )
   }
 
-  // Authenticated — show team management
+  // ── Authenticated ───────────────────────────────────────────────────────
+  const hasTeam = !!status.team
+  const hasPendingInvites = pendingInvites.length > 0
+  const isPaid = status.subscriptionActive || !!status.grant
+
   const roleIcon = (role: string) => {
     switch (role) {
       case 'owner': return <Crown className="w-3 h-3 text-yellow-500" />
@@ -158,6 +136,7 @@ export default function SettingsTabTeam({ config, onChange }: Props) {
 
   return (
     <div className="space-y-6">
+      {/* Account section — always visible when authenticated */}
       <Section title="Account">
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
@@ -173,19 +152,137 @@ export default function SettingsTabTeam({ config, onChange }: Props) {
             Sign out
           </button>
         </div>
-
-        <Toggle
-          label="Enable premium features"
-          hint="Connects to CodeFire cloud for team sync"
-          value={config.premiumEnabled}
-          onChange={(v) => onChange({ premiumEnabled: v })}
-        />
       </Section>
 
-      {/* No team yet — create one */}
-      {!status.team && (
+      {/* ── Pending invites: always show if user has been invited ────────── */}
+      {!hasTeam && hasPendingInvites && (
+        <Section title="Team Invitations">
+          <div className="space-y-2">
+            {pendingInvites.map((inv) => (
+              <div
+                key={inv.id}
+                className="flex items-center justify-between rounded-lg border border-codefire-orange/30
+                           bg-codefire-orange/5 p-3"
+              >
+                <div className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-codefire-orange shrink-0" />
+                  <div>
+                    <p className="text-xs text-neutral-200 font-medium">{inv.teamName}</p>
+                    <p className="text-[10px] text-neutral-500">
+                      Invited as {inv.role}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={async () => {
+                    setSubmitting(true)
+                    try {
+                      await acceptInviteById(inv.id)
+                      if (!config.premiumEnabled) {
+                        onChange({ premiumEnabled: true })
+                      }
+                    } finally {
+                      setSubmitting(false)
+                    }
+                  }}
+                  disabled={submitting}
+                  className="px-3 py-1.5 rounded text-xs bg-codefire-orange/20 text-codefire-orange
+                             hover:bg-codefire-orange/30 transition-colors font-medium disabled:opacity-50"
+                >
+                  {submitting ? 'Joining...' : 'Join Team'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {/* ── No team + no invites + not paid: PAYWALL ────────────────────── */}
+      {!hasTeam && !isPaid && (
+        <Section title="Subscribe to Teams">
+          <div className="space-y-3">
+            <p className="text-[10px] text-neutral-500 leading-relaxed">
+              A subscription is required to create a team and enable collaboration features.
+              {hasPendingInvites ? ' You can also join an existing team above for free.' : ''}
+            </p>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSelectedPlan('starter')}
+                className={`flex-1 rounded-lg border p-3 text-left transition-colors ${
+                  selectedPlan === 'starter'
+                    ? 'border-codefire-orange bg-codefire-orange/10'
+                    : 'border-neutral-700 hover:border-neutral-600'
+                }`}
+              >
+                <p className="text-xs font-medium text-neutral-200">Starter</p>
+                <p className="text-[10px] text-neutral-500">$9/mo — 3 seats</p>
+              </button>
+              <button
+                onClick={() => setSelectedPlan('agency')}
+                className={`flex-1 rounded-lg border p-3 text-left transition-colors ${
+                  selectedPlan === 'agency'
+                    ? 'border-codefire-orange bg-codefire-orange/10'
+                    : 'border-neutral-700 hover:border-neutral-600'
+                }`}
+              >
+                <div className="flex items-center gap-1">
+                  <p className="text-xs font-medium text-neutral-200">Agency</p>
+                  <Zap className="w-3 h-3 text-codefire-orange" />
+                </div>
+                <p className="text-[10px] text-neutral-500">$40/mo — unlimited</p>
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] text-neutral-500">
+                Extra seats: {extraSeats}
+              </label>
+              <input
+                type="range"
+                min={0}
+                max={20}
+                value={extraSeats}
+                onChange={(e) => setExtraSeats(Number(e.target.value))}
+                className="w-full accent-codefire-orange"
+              />
+            </div>
+
+            <button
+              onClick={async () => {
+                setBillingLoading(true)
+                try {
+                  const { url } = await api.premium.createCheckout(
+                    null, // user-level checkout — no team yet
+                    selectedPlan,
+                    extraSeats
+                  )
+                  window.api.invoke('shell:openExternal', url)
+                } catch (err: any) {
+                  console.error('Failed to create checkout:', err)
+                } finally {
+                  setBillingLoading(false)
+                }
+              }}
+              disabled={billingLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs bg-codefire-orange/20
+                         text-codefire-orange hover:bg-codefire-orange/30 transition-colors
+                         font-medium disabled:opacity-50"
+            >
+              <CreditCard className="w-3 h-3" />
+              {billingLoading ? 'Opening...' : 'Subscribe'}
+            </button>
+          </div>
+        </Section>
+      )}
+
+      {/* ── Paid but no team yet: create one ────────────────────────────── */}
+      {!hasTeam && isPaid && (
         <Section title="Create a Team">
           <div className="space-y-3">
+            <p className="text-[10px] text-neutral-500 leading-relaxed">
+              Your subscription is active. Create a team to start collaborating.
+            </p>
             <TextInput
               label="Team name"
               value={teamName}
@@ -221,21 +318,21 @@ export default function SettingsTabTeam({ config, onChange }: Props) {
         </Section>
       )}
 
-      {/* Team exists — show members and invite */}
-      {status.team && (
+      {/* ── Team exists: full management UI ─────────────────────────────── */}
+      {hasTeam && (
         <>
-          <Section title={`Team: ${status.team.name}`}>
+          <Section title={`Team: ${status.team!.name}`}>
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-[10px] text-neutral-500">
                 <span className="uppercase tracking-wider font-medium">
-                  {status.team.plan} plan
+                  {status.team!.plan} plan
                 </span>
                 <span>•</span>
-                <span>{members.length} / {status.team.seatLimit} seats</span>
-                {status.team.projectLimit && (
+                <span>{members.length} / {status.team!.seatLimit} seats</span>
+                {status.team!.projectLimit && (
                   <>
                     <span>•</span>
-                    <span>{status.team.projectLimit} project limit</span>
+                    <span>{status.team!.projectLimit} project limit</span>
                   </>
                 )}
               </div>
@@ -456,6 +553,12 @@ export default function SettingsTabTeam({ config, onChange }: Props) {
         </>
       )}
 
+      {error && (
+        <div className="flex items-center gap-1.5 text-xs text-red-400">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          {error}
+        </div>
+      )}
     </div>
   )
 }

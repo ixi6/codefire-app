@@ -25,6 +25,7 @@ struct TaskDetailView: View {
     @State private var isDropTargeted = false
     @State private var notes: [TaskNote] = []
     @State private var newNoteText: String = ""
+    @State private var mentionedUserIds: [String] = []
     @State private var replyText = ""
     @State private var isSendingReply = false
     @State private var replySuccess: Bool?
@@ -310,24 +311,13 @@ struct TaskDetailView: View {
                             }
                         }
 
-                        // Add note input
-                        HStack(spacing: 6) {
-                            TextField("Add a note...", text: $newNoteText)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(size: 11))
-                                .onSubmit { addNote() }
-
-                            Button {
-                                addNote()
-                            } label: {
-                                Image(systemName: "arrow.up.circle.fill")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(newNoteText.trimmingCharacters(in: .whitespaces).isEmpty
-                                                     ? .secondary : .accentColor)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(newNoteText.trimmingCharacters(in: .whitespaces).isEmpty)
-                        }
+                        // Add note input with @mention autocomplete
+                        MentionTextField(
+                            text: $newNoteText,
+                            mentionedUserIds: $mentionedUserIds,
+                            placeholder: "Add a note... (type @ to mention)",
+                            onSubmit: { addNote() }
+                        )
                     }
 
                     // Attachments
@@ -682,11 +672,13 @@ struct TaskDetailView: View {
             sessionId: nil,
             createdAt: Date()
         )
+        note.setMentions(mentionedUserIds)
         do {
             try DatabaseService.shared.dbQueue.write { db in
                 try note.insert(db)
             }
             newNoteText = ""
+            mentionedUserIds = []
             loadNotes()
         } catch {
             print("TaskDetailView: failed to add note: \(error)")

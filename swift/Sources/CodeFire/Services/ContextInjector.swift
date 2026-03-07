@@ -149,8 +149,13 @@ class ContextInjector {
 
     // MARK: - Per-CLI MCP Installation
 
-    /// The deployed CodeFireMCP binary path.
+    /// The deployed CodeFireMCP binary path (space-free symlink for MCP clients).
+    /// Falls back to the Application Support path if the symlink doesn't exist.
     static var mcpBinaryPath: String {
+        let symlinkPath = (NSHomeDirectory() as NSString).appendingPathComponent(".local/bin/CodeFireMCP")
+        if FileManager.default.fileExists(atPath: symlinkPath) {
+            return symlinkPath
+        }
         let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
         ).first!

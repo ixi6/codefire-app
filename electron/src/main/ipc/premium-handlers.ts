@@ -31,24 +31,26 @@ export function registerPremiumHandlers(
     teamService.removeMember(teamId, userId))
   ipcMain.handle('premium:acceptInvite', (_e, token: string) =>
     teamService.acceptInvite(token))
+  ipcMain.handle('premium:getMyInvites', () =>
+    teamService.getMyInvites())
+  ipcMain.handle('premium:acceptInviteById', (_e, inviteId: string) =>
+    teamService.acceptInviteById(inviteId))
 
   // Project sync
   ipcMain.handle('premium:syncProject', (_e, teamId: string, projectId: string, name: string, repoUrl?: string) => {
-    syncEngine.trackEntity('project', projectId, projectId)
     return teamService.syncProject(teamId, projectId, name, repoUrl)
   })
   ipcMain.handle('premium:unsyncProject', (_e, projectId: string) => {
-    syncEngine.unsubscribeFromProject(projectId)
     return teamService.unsyncProject(projectId)
   })
 
   // Billing
-  ipcMain.handle('premium:createCheckout', async (_e, teamId: string, plan: string, extraSeats?: number) => {
+  ipcMain.handle('premium:createCheckout', async (_e, teamId: string | null, plan: string, extraSeats?: number) => {
     const client = getSupabaseClient()
     if (!client) throw new Error('Premium not configured')
-    const { data, error } = await client.functions.invoke('create-checkout', {
-      body: { teamId, plan, extraSeats: extraSeats || 0 }
-    })
+    const body: Record<string, unknown> = { plan, extraSeats: extraSeats || 0 }
+    if (teamId) body.teamId = teamId
+    const { data, error } = await client.functions.invoke('create-checkout', { body })
     if (error) throw error
     return data
   })

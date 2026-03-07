@@ -72,7 +72,7 @@ class ProjectDiscovery {
             }
 
             let name = (resolvedPath as NSString).lastPathComponent
-            let project = Project(
+            var project = Project(
                 id: UUID().uuidString,
                 name: name,
                 path: resolvedPath,
@@ -80,6 +80,7 @@ class ProjectDiscovery {
                 lastOpened: nil,
                 createdAt: Date()
             )
+            project.repoUrl = Self.detectGitRemote(at: resolvedPath)
             projects.append(project)
         }
 
@@ -87,18 +88,22 @@ class ProjectDiscovery {
     }
 
     /// Discover projects and insert any that are not already in the database
-    /// (matched by `path`).
+    /// (matched by `path`). Also backfills `repoUrl` for existing projects.
     func importProjects() throws {
         let discovered = try discoverProjects()
 
         try db.dbQueue.write { dbConn in
             for project in discovered {
-                // Skip if a project with the same path already exists
-                let exists = try Project
+                // Check if a project with the same path already exists
+                if var existing = try Project
                     .filter(Project.Columns.path == project.path)
-                    .fetchCount(dbConn) > 0
-
-                if !exists {
+                    .fetchOne(dbConn) {
+                    // Backfill repoUrl if missing
+                    if existing.repoUrl == nil, let repoUrl = project.repoUrl {
+                        existing.repoUrl = repoUrl
+                        try existing.update(dbConn)
+                    }
+                } else {
                     var p = project
                     try p.insert(dbConn)
                 }
@@ -175,6 +180,68 @@ class ProjectDiscovery {
     }
 
     // MARK: - Path Resolution
+
+    // MARK: - Git Remote Detection
+
+    /// Detect the git remote origin URL for a directory.
+    /// Returns a normalized URL suitable for cross-machine matching.
+    static func detectGitRemote(at path: String) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", path, "config", "--get", "remote.origin.url"]
+        process.standardError = FileHandle.nullDevice
+        let pipe = Pipe()
+        process.standardOutput = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else { return nil }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let url = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !url.isEmpty else { return nil }
+
+        return normalizeGitUrl(url)
+    }
+
+    /// Normalize git URLs so SSH and HTTPS variants match:
+    /// `git@github.com:user/repo.git` → `github.com/user/repo`
+    /// `https://github.com/user/repo.git` → `github.com/user/repo`
+    static func normalizeGitUrl(_ url: String) -> String {
+        var normalized = url
+
+        // SSH format: git@github.com:user/repo.git
+        if normalized.contains("@") && normalized.contains(":") {
+            normalized = normalized
+                .replacingOccurrences(of: "git@", with: "")
+                .replacingOccurrences(of: ":", with: "/")
+        }
+
+        // Strip protocol
+        for prefix in ["https://", "http://", "ssh://"] {
+            if normalized.hasPrefix(prefix) {
+                normalized = String(normalized.dropFirst(prefix.count))
+            }
+        }
+
+        // Strip .git suffix
+        if normalized.hasSuffix(".git") {
+            normalized = String(normalized.dropLast(4))
+        }
+
+        // Strip trailing slash
+        while normalized.hasSuffix("/") {
+            normalized = String(normalized.dropLast())
+        }
+
+        return normalized
+    }
 
     /// The characters that Claude Code's encoding maps to `-`.
     /// A `-` in the encoded name could have originally been any of these.

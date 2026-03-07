@@ -11,6 +11,7 @@ struct Project: Codable, Identifiable, Equatable, FetchableRecord, MutablePersis
     var clientId: String?
     var tags: String? // JSON array
     var sortOrder: Int = 0
+    var repoUrl: String? // Git remote origin URL — canonical team identifier
 
     static let databaseTableName = "projects"
 
@@ -24,6 +25,7 @@ struct Project: Codable, Identifiable, Equatable, FetchableRecord, MutablePersis
         static let clientId = Column(CodingKeys.clientId)
         static let tags = Column(CodingKeys.tags)
         static let sortOrder = Column(CodingKeys.sortOrder)
+        static let repoUrl = Column(CodingKeys.repoUrl)
     }
 
     var tagsArray: [String] {

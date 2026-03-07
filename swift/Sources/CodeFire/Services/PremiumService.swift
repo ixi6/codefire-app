@@ -25,6 +25,11 @@ class PremiumService: ObservableObject {
     private var baseURL: String { SharedServices.shared.appSettings.supabaseUrl }
     private var anonKey: String { SharedServices.shared.appSettings.supabaseAnonKey }
 
+    /// Public accessors for SyncEngine/RealtimeClient
+    var supabaseBaseURL: String { baseURL }
+    var supabaseAnonKeyValue: String { anonKey }
+    var currentAccessToken: String? { accessToken }
+
     private let decoder: JSONDecoder = {
         let d = JSONDecoder()
         return d
@@ -212,13 +217,51 @@ class PremiumService: ObservableObject {
 
         dbg("createTeam: slug=\(slug), hasToken=\(accessToken != nil)")
 
+        // Check if user has pre-team Stripe IDs to transfer
+        var userStripeCustomerId: String?
+        var userStripeSubscriptionId: String?
+        if let userId = status.user?.id {
+            do {
+                let userData = try await supabaseRequest(
+                    "users",
+                    queryParams: [
+                        ("select", "stripe_customer_id,stripe_subscription_id"),
+                        ("id", "eq.\(userId)"),
+                        ("limit", "1")
+                    ]
+                )
+                struct UserStripe: Decodable {
+                    let stripeCustomerId: String?
+                    let stripeSubscriptionId: String?
+                    enum CodingKeys: String, CodingKey {
+                        case stripeCustomerId = "stripe_customer_id"
+                        case stripeSubscriptionId = "stripe_subscription_id"
+                    }
+                }
+                if let userStripe = try decoder.decode([UserStripe].self, from: userData).first {
+                    userStripeCustomerId = userStripe.stripeCustomerId
+                    userStripeSubscriptionId = userStripe.stripeSubscriptionId
+                }
+            } catch {
+                dbg("createTeam: failed to check user Stripe IDs: \(error)")
+            }
+        }
+
         // owner_id is set server-side via DEFAULT auth.uid()
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "name": name,
             "slug": slug,
             "plan": "starter",
             "seat_limit": 5
         ]
+        // Transfer user's Stripe IDs to the team
+        if let customerId = userStripeCustomerId {
+            body["stripe_customer_id"] = customerId
+        }
+        if let subscriptionId = userStripeSubscriptionId {
+            body["stripe_subscription_id"] = subscriptionId
+        }
+
         let bodyData = try JSONSerialization.data(withJSONObject: body)
         dbg("createTeam body: \(String(data: bodyData, encoding: .utf8) ?? "nil")")
         let data = try await supabaseRequest(
@@ -244,6 +287,20 @@ class PremiumService: ObservableObject {
             method: "POST",
             body: memberData
         )
+
+        // Clear user-level Stripe IDs (now owned by team)
+        if userStripeSubscriptionId != nil, let userId = status.user?.id {
+            let clearBody = try JSONSerialization.data(withJSONObject: [
+                "stripe_customer_id": NSNull(),
+                "stripe_subscription_id": NSNull()
+            ] as [String: Any])
+            _ = try? await supabaseRequest(
+                "users",
+                method: "PATCH",
+                body: clearBody,
+                queryParams: [("id", "eq.\(userId)")]
+            )
+        }
 
         status.team = team
         return team
@@ -299,32 +356,158 @@ class PremiumService: ObservableObject {
         await loadTeamMembership()
     }
 
+    /// Fetch pending invites for the currently authenticated user's email.
+    func getMyInvites() async throws -> [TeamInviteWithName] {
+        guard let email = status.user?.email else {
+            throw PremiumError.authFailed("Not authenticated")
+        }
+        let data = try await supabaseRequest(
+            "team_invites",
+            queryParams: [
+                ("select", "*,teams(name)"),
+                ("email", "eq.\(email)"),
+                ("status", "eq.pending")
+            ]
+        )
+
+        struct InviteRow: Decodable {
+            let id: String
+            let teamId: String
+            let email: String
+            let role: String
+            let status: String
+            let createdAt: String
+            let expiresAt: String
+            let teams: TeamNameOnly?
+
+            enum CodingKeys: String, CodingKey {
+                case id, email, role, status
+                case teamId = "team_id"
+                case createdAt = "created_at"
+                case expiresAt = "expires_at"
+                case teams
+            }
+        }
+
+        struct TeamNameOnly: Decodable {
+            let name: String
+        }
+
+        let rows = try decoder.decode([InviteRow].self, from: data)
+        return rows.map { row in
+            TeamInviteWithName(
+                id: row.id,
+                teamId: row.teamId,
+                email: row.email,
+                role: row.role,
+                status: row.status,
+                createdAt: row.createdAt,
+                expiresAt: row.expiresAt,
+                teamName: row.teams?.name ?? "Unknown Team"
+            )
+        }
+    }
+
+    /// Accept a pending invite by its ID (for in-app join flow).
+    func acceptInviteById(inviteId: String) async throws {
+        guard let userId = status.user?.id else {
+            throw PremiumError.authFailed("Not authenticated")
+        }
+
+        // Fetch the invite
+        let inviteData = try await supabaseRequest(
+            "team_invites",
+            queryParams: [
+                ("select", "*"),
+                ("id", "eq.\(inviteId)"),
+                ("status", "eq.pending"),
+                ("limit", "1")
+            ]
+        )
+
+        struct Invite: Decodable {
+            let id: String
+            let teamId: String
+            let role: String
+            enum CodingKeys: String, CodingKey {
+                case id, role
+                case teamId = "team_id"
+            }
+        }
+
+        let invites = try decoder.decode([Invite].self, from: inviteData)
+        guard let invite = invites.first else {
+            throw PremiumError.unexpected("Invalid or expired invite")
+        }
+
+        // Add to team
+        let memberBody = try JSONSerialization.data(withJSONObject: [
+            "team_id": invite.teamId,
+            "user_id": userId,
+            "role": invite.role
+        ])
+        _ = try await supabaseRequest(
+            "team_members",
+            method: "POST",
+            body: memberBody,
+            headers: [("Prefer", "return=representation")]
+        )
+
+        // Mark invite accepted
+        let updateBody = try JSONSerialization.data(withJSONObject: ["status": "accepted"])
+        _ = try await supabaseRequest(
+            "team_invites",
+            method: "PATCH",
+            body: updateBody,
+            queryParams: [("id", "eq.\(inviteId)")]
+        )
+
+        await loadTeamMembership()
+    }
+
     // MARK: - Project Sync
 
     func syncProject(teamId: String, projectId: String, name: String, repoUrl: String?) async throws {
+        guard let userId = status.user?.id else {
+            throw PremiumError.authFailed("Not authenticated")
+        }
         var body: [String: Any] = [
+            "id": projectId,
             "team_id": teamId,
-            "project_id": projectId,
-            "name": name
+            "name": name,
+            "created_by": userId
         ]
         if let repoUrl = repoUrl {
             body["repo_url"] = repoUrl
         }
         let bodyData = try JSONSerialization.data(withJSONObject: body)
         _ = try await supabaseRequest(
-            "team_projects",
+            "synced_projects",
             method: "POST",
             body: bodyData,
             headers: [("Prefer", "return=representation")]
         )
+
+        // Also add the user as project lead
+        let memberBody = try JSONSerialization.data(withJSONObject: [
+            "project_id": projectId,
+            "user_id": userId,
+            "role": "lead"
+        ] as [String: Any])
+        _ = try? await supabaseRequest(
+            "project_members",
+            method: "POST",
+            body: memberBody
+        )
+
         status.syncEnabled = true
     }
 
     func unsyncProject(projectId: String) async throws {
         _ = try await supabaseRequest(
-            "team_projects",
+            "synced_projects",
             method: "DELETE",
-            queryParams: [("project_id", "eq.\(projectId)")]
+            queryParams: [("id", "eq.\(projectId)")]
         )
     }
 
@@ -646,14 +829,40 @@ class PremiumService: ObservableObject {
         return review
     }
 
+    // MARK: - OSS Grants
+
+    func requestOSSGrant(teamId: String, grantType: String, repoUrl: String) async throws {
+        guard let userId = status.user?.id else {
+            throw PremiumError.authFailed("Not authenticated")
+        }
+        let body: [String: Any] = [
+            "team_id": teamId,
+            "grant_type": grantType,
+            "plan_tier": "agency",
+            "repo_url": repoUrl,
+            "granted_by": userId,
+            "note": "Self-service request — pending review"
+        ]
+        let bodyData = try JSONSerialization.data(withJSONObject: body)
+        _ = try await supabaseRequest(
+            "team_grants",
+            method: "POST",
+            body: bodyData,
+            headers: [("Prefer", "return=representation")]
+        )
+    }
+
     // MARK: - Billing
 
-    func createCheckout(teamId: String, plan: String, extraSeats: Int) async throws -> URL {
-        let data = try await supabaseEdgeFunction("create-checkout", body: [
-            "teamId": teamId,
+    func createCheckout(teamId: String?, plan: String, extraSeats: Int) async throws -> URL {
+        var body: [String: Any] = [
             "plan": plan,
             "extraSeats": extraSeats
-        ])
+        ]
+        if let teamId = teamId {
+            body["teamId"] = teamId
+        }
+        let data = try await supabaseEdgeFunction("create-checkout", body: body)
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let urlStr = json["url"] as? String,
               let url = URL(string: urlStr)
@@ -674,6 +883,49 @@ class PremiumService: ObservableObject {
             throw PremiumError.unexpected("Invalid billing portal response")
         }
         return url
+    }
+
+    // MARK: - Public REST Helpers (used by SyncEngine)
+
+    /// GET from a Supabase REST table.
+    func supabaseGetPublic(_ table: String, queryParams: [(String, String)] = []) async throws -> Data {
+        return try await supabaseRequest(table, queryParams: queryParams)
+    }
+
+    /// INSERT a row and return the created object as a dictionary.
+    func supabaseInsertPublic(_ table: String, body: [String: Any]) async throws -> [String: Any] {
+        let bodyData = try JSONSerialization.data(withJSONObject: body)
+        let data = try await supabaseRequest(
+            table,
+            method: "POST",
+            body: bodyData,
+            headers: [("Prefer", "return=representation")]
+        )
+        guard let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+              let first = arr.first else {
+            throw PremiumError.unexpected("No row returned from INSERT")
+        }
+        return first
+    }
+
+    /// UPSERT (PATCH) a row by its UUID.
+    func supabaseUpsertPublic(_ table: String, id: String, body: [String: Any]) async throws {
+        let bodyData = try JSONSerialization.data(withJSONObject: body)
+        _ = try await supabaseRequest(
+            table,
+            method: "PATCH",
+            body: bodyData,
+            queryParams: [("id", "eq.\(id)")]
+        )
+    }
+
+    /// DELETE a row by its UUID.
+    func supabaseDeletePublic(_ table: String, id: String) async throws {
+        _ = try await supabaseRequest(
+            table,
+            method: "DELETE",
+            queryParams: [("id", "eq.\(id)")]
+        )
     }
 
     // MARK: - Private Helpers
@@ -720,6 +972,32 @@ class PremiumService: ObservableObject {
             }
         } catch {
             // Non-fatal: user may not be on a team yet
+        }
+
+        // Check for user-level subscription (pre-team)
+        if !status.subscriptionActive, let userId = status.user?.id {
+            do {
+                let userData = try await supabaseRequest(
+                    "users",
+                    queryParams: [
+                        ("select", "stripe_subscription_id"),
+                        ("id", "eq.\(userId)"),
+                        ("limit", "1")
+                    ]
+                )
+                struct UserSub: Decodable {
+                    let stripeSubscriptionId: String?
+                    enum CodingKeys: String, CodingKey {
+                        case stripeSubscriptionId = "stripe_subscription_id"
+                    }
+                }
+                let users = try decoder.decode([UserSub].self, from: userData)
+                if let sub = users.first, sub.stripeSubscriptionId != nil {
+                    status.subscriptionActive = true
+                }
+            } catch {
+                // Non-fatal
+            }
         }
     }
 

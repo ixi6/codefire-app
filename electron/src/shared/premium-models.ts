@@ -48,9 +48,10 @@ export interface TeamGrant {
 }
 
 export interface SyncState {
-  entityType: 'task' | 'note' | 'project'
+  entityType: 'task' | 'note' | 'taskNote' | 'project'
   localId: string
   remoteId: string | null
+  projectId: string | null
   lastSyncedAt: string | null
   dirty: boolean
 }

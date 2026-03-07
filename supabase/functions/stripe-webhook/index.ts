@@ -90,31 +90,48 @@ serve(async (req: Request) => {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
         const teamId = session.metadata?.teamId
+        const userId = session.metadata?.userId
         const plan = session.metadata?.plan
 
-        if (!teamId || !plan) {
-          console.error('checkout.session.completed missing metadata:', session.metadata)
+        if (!plan) {
+          console.error('checkout.session.completed missing plan metadata:', session.metadata)
           break
         }
 
-        // Retrieve the full subscription to get line item quantities
         const subscriptionId = session.subscription as string
         const subscription = await stripe.subscriptions.retrieve(subscriptionId)
         const extraSeats = getExtraSeatsFromSubscription(subscription)
         const limits = computePlanLimits(plan, extraSeats)
 
-        const { error: updateError } = await supabaseAdmin
-          .from('teams')
-          .update({
-            stripe_subscription_id: subscriptionId,
-            ...limits,
-          })
-          .eq('id', teamId)
+        if (teamId) {
+          // ── Team-level checkout: update existing team ──────────────
+          const { error: updateError } = await supabaseAdmin
+            .from('teams')
+            .update({
+              stripe_subscription_id: subscriptionId,
+              ...limits,
+            })
+            .eq('id', teamId)
 
-        if (updateError) {
-          console.error('Failed to update team after checkout:', updateError)
+          if (updateError) {
+            console.error('Failed to update team after checkout:', updateError)
+          } else {
+            console.log(`Team ${teamId} activated: plan=${limits.plan}, seats=${limits.seat_limit}, projects=${limits.project_limit}`)
+          }
+        } else if (userId) {
+          // ── User-level checkout: store subscription on user ────────
+          const { error: updateError } = await supabaseAdmin
+            .from('users')
+            .update({ stripe_subscription_id: subscriptionId })
+            .eq('id', userId)
+
+          if (updateError) {
+            console.error('Failed to update user after checkout:', updateError)
+          } else {
+            console.log(`User ${userId} subscribed: plan=${plan}, seats=${limits.seat_limit}`)
+          }
         } else {
-          console.log(`Team ${teamId} activated: plan=${limits.plan}, seats=${limits.seat_limit}, projects=${limits.project_limit}`)
+          console.error('checkout.session.completed missing both teamId and userId:', session.metadata)
         }
         break
       }
@@ -125,7 +142,7 @@ serve(async (req: Request) => {
 
         if (!subscriptionId) break
 
-        // Look up team by subscription ID to confirm it's active
+        // Check team first, then user
         const { data: team } = await supabaseAdmin
           .from('teams')
           .select('id, plan')
@@ -134,8 +151,16 @@ serve(async (req: Request) => {
 
         if (team) {
           console.log(`Invoice paid for team ${team.id} (plan: ${team.plan})`)
+        } else {
+          const { data: userProfile } = await supabaseAdmin
+            .from('users')
+            .select('id')
+            .eq('stripe_subscription_id', subscriptionId)
+            .single()
+          if (userProfile) {
+            console.log(`Invoice paid for user ${userProfile.id}`)
+          }
         }
-        // No-op if already active — subscription stays as-is
         break
       }
 
@@ -153,6 +178,15 @@ serve(async (req: Request) => {
 
         if (team) {
           console.warn(`Payment failed for team ${team.id} (${team.name}). Grace period — no action taken.`)
+        } else {
+          const { data: userProfile } = await supabaseAdmin
+            .from('users')
+            .select('id, email')
+            .eq('stripe_subscription_id', subscriptionId)
+            .single()
+          if (userProfile) {
+            console.warn(`Payment failed for user ${userProfile.id} (${userProfile.email}). Grace period.`)
+          }
         }
         break
       }
@@ -181,6 +215,7 @@ serve(async (req: Request) => {
 
             console.log(`Team ${team.id} subscription updated: seats=${limits.seat_limit}`)
           }
+          // User-level subscriptions don't need seat updates (limits applied at team creation)
           break
         }
 
@@ -206,12 +241,12 @@ serve(async (req: Request) => {
         const subscription = event.data.object as Stripe.Subscription
         const teamId = subscription.metadata?.teamId
 
-        // Find team by subscription ID as fallback
-        const query = teamId
+        // Try team first
+        const teamQuery = teamId
           ? supabaseAdmin.from('teams').select('id').eq('id', teamId).single()
           : supabaseAdmin.from('teams').select('id').eq('stripe_subscription_id', subscription.id).single()
 
-        const { data: team } = await query
+        const { data: team } = await teamQuery
 
         if (team) {
           const { error: updateError } = await supabaseAdmin
@@ -228,6 +263,22 @@ serve(async (req: Request) => {
             console.error('Failed to reset team on subscription deletion:', updateError)
           } else {
             console.log(`Team ${team.id} reset to free tier after subscription cancellation`)
+          }
+        } else {
+          // Check for user-level subscription
+          const { data: userProfile } = await supabaseAdmin
+            .from('users')
+            .select('id')
+            .eq('stripe_subscription_id', subscription.id)
+            .single()
+
+          if (userProfile) {
+            await supabaseAdmin
+              .from('users')
+              .update({ stripe_subscription_id: null })
+              .eq('id', userProfile.id)
+
+            console.log(`User ${userProfile.id} subscription cancelled`)
           }
         }
         break

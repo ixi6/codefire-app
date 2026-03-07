@@ -2,24 +2,26 @@ import SwiftUI
 
 struct PresenceAvatarsView: View {
     @ObservedObject var premiumService = PremiumService.shared
+    @ObservedObject var syncEngine = SyncEngine.shared
     let projectId: String?
 
-    @State private var onlineMembers: [TeamMember] = []
+    @State private var presenceEntries: [RealtimeClient.PresenceEntry] = []
+    @State private var presenceClient: RealtimeClient?
 
     var body: some View {
         Group {
             if !premiumService.status.enabled || !premiumService.status.authenticated {
                 EmptyView()
-            } else if onlineMembers.isEmpty {
+            } else if presenceEntries.isEmpty {
                 EmptyView()
             } else {
                 HStack(spacing: -6) {
-                    ForEach(onlineMembers.prefix(5), id: \.userId) { member in
-                        memberAvatar(member)
+                    ForEach(presenceEntries.prefix(5), id: \.userId) { entry in
+                        memberAvatar(entry)
                     }
 
-                    if onlineMembers.count > 5 {
-                        Text("+\(onlineMembers.count - 5)")
+                    if presenceEntries.count > 5 {
+                        Text("+\(presenceEntries.count - 5)")
                             .font(.system(size: 8, weight: .bold))
                             .foregroundColor(.secondary)
                             .frame(width: 22, height: 22)
@@ -36,17 +38,19 @@ struct PresenceAvatarsView: View {
             }
         }
         .task {
-            await loadPresence()
+            await connectPresence()
+        }
+        .onDisappear {
+            disconnectPresence()
         }
     }
 
-    private func memberAvatar(_ member: TeamMember) -> some View {
-        let name = member.user?.displayName ?? member.userId
-        let initials = String(name.prefix(2).uppercased())
+    private func memberAvatar(_ entry: RealtimeClient.PresenceEntry) -> some View {
+        let initials = String(entry.displayName.prefix(2).uppercased())
 
         return ZStack {
             Circle()
-                .fill(colorForUser(member.userId))
+                .fill(colorForUser(entry.userId))
                 .frame(width: 22, height: 22)
                 .overlay(
                     Circle()
@@ -56,21 +60,61 @@ struct PresenceAvatarsView: View {
             Text(initials)
                 .font(.system(size: 8, weight: .bold))
                 .foregroundColor(.white)
+
+            // Online indicator dot
+            Circle()
+                .fill(entry.status == "active" ? Color.green : Color.yellow)
+                .frame(width: 7, height: 7)
+                .overlay(
+                    Circle()
+                        .stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5)
+                )
+                .offset(x: 7, y: 7)
         }
-        .help(name)
+        .help(tooltipText(entry))
     }
 
-    private func loadPresence() async {
-        guard let teamId = premiumService.status.team?.id else { return }
-        do {
-            let allMembers = try await premiumService.listMembers(teamId: teamId)
-            // For now, show all team members as "online" since we don't
-            // have a real-time presence API yet. A future implementation
-            // would use WebSocket or polling for actual presence.
-            onlineMembers = allMembers
-        } catch {
-            print("Presence: failed to load: \(error)")
+    private func tooltipText(_ entry: RealtimeClient.PresenceEntry) -> String {
+        var parts = [entry.displayName]
+        if entry.status == "idle" { parts.append("(idle)") }
+        if let file = entry.activeFile { parts.append("editing \(file)") }
+        if let branch = entry.gitBranch { parts.append("on \(branch)") }
+        return parts.joined(separator: " — ")
+    }
+
+    private func connectPresence() async {
+        guard let projectId,
+              premiumService.status.enabled,
+              premiumService.status.authenticated else { return }
+
+        let client = RealtimeClient(
+            supabaseUrl: premiumService.supabaseBaseURL,
+            anonKey: premiumService.supabaseAnonKeyValue
+        )
+
+        let userState: [String: Any] = [
+            "user_id": premiumService.status.user?.id ?? "",
+            "display_name": premiumService.status.user?.displayName ?? "Unknown",
+            "status": "active",
+        ]
+
+        let channel = "presence:project-\(projectId)"
+        client.joinPresence(channel: channel, userState: userState) { entries in
+            // Filter out self and update
+            let currentUserId = premiumService.status.user?.id
+            presenceEntries = Array(entries.values)
+                .filter { $0.userId != currentUserId }
+                .sorted { $0.displayName < $1.displayName }
         }
+
+        client.connect(accessToken: premiumService.currentAccessToken)
+        presenceClient = client
+    }
+
+    private func disconnectPresence() {
+        presenceClient?.disconnect()
+        presenceClient = nil
+        presenceEntries = []
     }
 
     private func colorForUser(_ id: String) -> Color {

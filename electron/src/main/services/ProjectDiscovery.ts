@@ -201,15 +201,26 @@ export function syncProjectsWithDatabase(
 
     if (existing) {
       // Update claudeProject if not already set
+      const updates: Record<string, any> = {}
       if (!existing.claudeProject || existing.claudeProject !== disc.encodedName) {
-        projectDAO.update(existing.id, { claudeProject: disc.encodedName })
+        updates.claudeProject = disc.encodedName
+      }
+      // Backfill repoUrl if missing
+      if (!existing.repoUrl) {
+        const repoUrl = detectGitRemote(disc.resolvedPath!)
+        if (repoUrl) updates.repoUrl = repoUrl
+      }
+      if (Object.keys(updates).length > 0) {
+        projectDAO.update(existing.id, updates)
       }
     } else {
       // Create new project
+      const repoUrl = detectGitRemote(disc.resolvedPath!) || undefined
       projectDAO.create({
         name: disc.name,
         path: disc.resolvedPath,
         claudeProject: disc.encodedName,
+        repoUrl,
       })
     }
   }
@@ -306,4 +317,52 @@ export function importProjectSessions(
  */
 function isUUID(str: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+}
+
+/**
+ * Detect the git remote origin URL for a project directory.
+ * Returns null if the directory isn't a git repo or has no remote.
+ */
+export function detectGitRemote(projectPath: string): string | null {
+  try {
+    const { execSync } = require('child_process')
+    const result = execSync('git config --get remote.origin.url', {
+      cwd: projectPath,
+      timeout: 3000,
+      encoding: 'utf-8',
+    }).trim()
+    return result || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Normalize a git URL to a canonical form for comparison.
+ * Strips protocol, SSH format, trailing .git, and lowercases.
+ *
+ * Examples:
+ *   git@github.com:user/repo.git  →  github.com/user/repo
+ *   https://github.com/user/repo  →  github.com/user/repo
+ */
+export function normalizeGitUrl(url: string): string {
+  let normalized = url.trim().toLowerCase()
+
+  // Strip trailing .git
+  normalized = normalized.replace(/\.git$/, '')
+
+  // SSH format: git@host:user/repo → host/user/repo
+  const sshMatch = normalized.match(/^[a-z]+@([^:]+):(.+)$/)
+  if (sshMatch) {
+    return `${sshMatch[1]}/${sshMatch[2]}`
+  }
+
+  // HTTPS format: https://host/user/repo → host/user/repo
+  try {
+    const parsed = new URL(normalized)
+    return `${parsed.host}${parsed.pathname}`.replace(/\/$/, '')
+  } catch {
+    // Not a valid URL, return as-is
+    return normalized
+  }
 }

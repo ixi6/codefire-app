@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { PremiumStatus, TeamMember } from '@shared/premium-models'
+import type { PremiumStatus, TeamMember, TeamInvite } from '@shared/premium-models'
 import { api } from '../lib/api'
 
 export function usePremium() {
   const [status, setStatus] = useState<PremiumStatus | null>(null)
   const [members, setMembers] = useState<TeamMember[]>([])
+  const [pendingInvites, setPendingInvites] = useState<(TeamInvite & { teamName: string })[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -16,8 +17,14 @@ export function usePremium() {
       if (s.authenticated && s.team) {
         const m = await api.premium.listMembers(s.team.id)
         setMembers(m)
+        setPendingInvites([])
+      } else if (s.authenticated && !s.team) {
+        setMembers([])
+        const invites = await api.premium.getMyInvites()
+        setPendingInvites(invites)
       } else {
         setMembers([])
+        setPendingInvites([])
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to load premium status')
@@ -82,9 +89,21 @@ export function usePremium() {
     await refresh()
   }, [status, refresh])
 
+  const acceptInviteById = useCallback(async (inviteId: string) => {
+    setError(null)
+    try {
+      await api.premium.acceptInviteById(inviteId)
+      await refresh()
+    } catch (err: any) {
+      setError(err?.message || 'Failed to join team')
+      throw err
+    }
+  }, [refresh])
+
   return {
     status,
     members,
+    pendingInvites,
     loading,
     error,
     signIn,
@@ -93,6 +112,7 @@ export function usePremium() {
     createTeam,
     inviteMember,
     removeMember,
+    acceptInviteById,
     refresh,
   }
 }

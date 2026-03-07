@@ -73,6 +73,18 @@ struct TeamInvite: Codable, Identifiable, Sendable {
     }
 }
 
+/// TeamInvite enriched with the team name for display in the join flow.
+struct TeamInviteWithName: Identifiable, Sendable {
+    let id: String
+    let teamId: String
+    let email: String
+    let role: String
+    let status: String
+    let createdAt: String
+    let expiresAt: String
+    let teamName: String
+}
+
 // MARK: - Team Grant
 
 struct TeamGrant: Codable, Identifiable, Sendable {

@@ -30,13 +30,14 @@ export class ProjectDAO {
     claudeProject?: string
     clientId?: string
     tags?: string
+    repoUrl?: string
   }): Project {
     const id = data.id ?? randomUUID()
     const now = new Date().toISOString()
     this.db
       .prepare(
-        `INSERT INTO projects (id, name, path, claudeProject, createdAt, clientId, tags, sortOrder)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0)`
+        `INSERT INTO projects (id, name, path, claudeProject, createdAt, clientId, tags, sortOrder, repoUrl)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`
       )
       .run(
         id,
@@ -45,7 +46,8 @@ export class ProjectDAO {
         data.claudeProject ?? null,
         now,
         data.clientId ?? null,
-        data.tags ?? null
+        data.tags ?? null,
+        data.repoUrl ?? null
       )
     return this.getById(id)!
   }
@@ -59,6 +61,7 @@ export class ProjectDAO {
       clientId?: string | null
       tags?: string | null
       sortOrder?: number
+      repoUrl?: string | null
     }
   ): Project | undefined {
     const existing = this.getById(id)
@@ -67,7 +70,7 @@ export class ProjectDAO {
     this.db
       .prepare(
         `UPDATE projects
-         SET name = ?, path = ?, claudeProject = ?, clientId = ?, tags = ?, sortOrder = ?
+         SET name = ?, path = ?, claudeProject = ?, clientId = ?, tags = ?, sortOrder = ?, repoUrl = ?
          WHERE id = ?`
       )
       .run(
@@ -77,6 +80,7 @@ export class ProjectDAO {
         data.clientId !== undefined ? data.clientId : existing.clientId,
         data.tags !== undefined ? data.tags : existing.tags,
         data.sortOrder ?? existing.sortOrder,
+        data.repoUrl !== undefined ? data.repoUrl : existing.repoUrl,
         id
       )
     return this.getById(id)

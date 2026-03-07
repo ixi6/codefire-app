@@ -206,8 +206,26 @@ class LiveSessionMonitor: ObservableObject {
             state = LiveSessionState()
             readNewContent(from: mostRecent)
         } else if !isActive && activeFileURL != nil {
+            let endedState = state
             activeFileURL = nil
             state = LiveSessionState()
+
+            // Post session-ended notification for auto-share prompt
+            if let sessionId = endedState.sessionId {
+                NotificationCenter.default.post(
+                    name: .sessionDidEnd,
+                    object: nil,
+                    userInfo: [
+                        "sessionId": sessionId,
+                        "slug": endedState.slug as Any,
+                        "model": endedState.model as Any,
+                        "gitBranch": endedState.gitBranch as Any,
+                        "filesChanged": endedState.filesChanged,
+                        "startedAt": endedState.startedAt as Any,
+                        "durationMins": endedState.startedAt.map { Int(Date().timeIntervalSince($0) / 60) } as Any,
+                    ]
+                )
+            }
         }
     }
 

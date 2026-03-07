@@ -3,6 +3,7 @@ import SwiftUI
 struct TeamSettingsTab: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var premiumService = PremiumService.shared
+    @ObservedObject var syncEngine = SyncEngine.shared
 
     // Auth form
     @State private var authEmail: String = ""
@@ -21,12 +22,34 @@ struct TeamSettingsTab: View {
     @State private var createTeamError: String?
     @State private var isInviting = false
 
+    // Sync
+    @State private var isSyncEnabled = false
+    @State private var isSyncingProject = false
+    @State private var syncError: String?
+
+    // Plan enforcement
+    @State private var planBlock: PlanEnforcer.BlockReason?
+    private let enforcer = PlanEnforcer()
+
+    // OSS grant
+    @State private var ossRepoUrl: String = ""
+    @State private var ossGrantType: String = "oss_project"
+    @State private var ossSubmitting = false
+    @State private var ossMessage: String?
+
+    // Pending invites
+    @State private var pendingInvites: [TeamInviteWithName] = []
+    @State private var isJoining = false
+
+    // Billing
+    @State private var selectedPlan: String = "starter"
+    @State private var extraSeats: Int = 0
+    @State private var isBillingLoading = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if !premiumService.status.enabled {
-                    enableSection
-                } else if !premiumService.status.authenticated {
+                if !premiumService.status.authenticated {
                     authSection
                 } else {
                     authenticatedSection
@@ -34,92 +57,85 @@ struct TeamSettingsTab: View {
             }
             .padding(16)
         }
-    }
-
-    // MARK: - Not Enabled
-
-    private var enableSection: some View {
-        GroupBox("Premium Teams") {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Enable collaborative features: shared activity feeds, session summaries, project docs, and code reviews with your team.")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-
-                Text("Free during alpha. No credit card required to try.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
-
-                Button("Enable Premium") {
-                    settings.premiumEnabled = true
-                    premiumService.status.enabled = true
+        .sheet(item: Binding(
+            get: { planBlock.map { IdentifiableBlock(reason: $0) } },
+            set: { planBlock = $0?.reason }
+        )) { block in
+            UpgradePromptView(reason: block.reason) {
+                if let team = premiumService.status.team {
+                    openCheckout(team)
                 }
+                planBlock = nil
+            } onDismiss: {
+                planBlock = nil
             }
-            .padding(8)
         }
     }
 
     // MARK: - Not Authenticated
 
     private var authSection: some View {
-        GroupBox(isSignUp ? "Create Account" : "Sign In") {
-            VStack(alignment: .leading, spacing: 10) {
-                if isSignUp {
-                    TextField("Display Name", text: $authDisplayName)
+        VStack(alignment: .leading, spacing: 16) {
+            GroupBox("Team Collaboration (Premium)") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Share projects, tasks, and notes with your team in real-time. Sign in or create an account to get started.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .padding(8)
+            }
+
+            GroupBox(isSignUp ? "Create Account" : "Sign In") {
+                VStack(alignment: .leading, spacing: 10) {
+                    if isSignUp {
+                        TextField("Display Name", text: $authDisplayName)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12))
+                    }
+
+                    TextField("Email", text: $authEmail)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12))
-                }
 
-                TextField("Email", text: $authEmail)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12))
+                    SecureField("Password", text: $authPassword)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
 
-                SecureField("Password", text: $authPassword)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12))
+                    if let error = authError {
+                        Text(error)
+                            .font(.system(size: 11))
+                            .foregroundColor(.red)
+                    }
 
-                if let error = authError {
-                    Text(error)
+                    HStack {
+                        Button(isSignUp ? "Sign Up" : "Sign In") {
+                            performAuth()
+                        }
+                        .disabled(authEmail.isEmpty || authPassword.isEmpty || isAuthLoading)
+
+                        if isAuthLoading {
+                            ProgressView()
+                                .controlSize(.small)
+                                .scaleEffect(0.7)
+                        }
+
+                        Spacer()
+
+                        Button(isSignUp ? "Already have an account" : "Create an account") {
+                            isSignUp.toggle()
+                            authError = nil
+                        }
                         .font(.system(size: 11))
-                        .foregroundColor(.red)
-                }
-
-                HStack {
-                    Button(isSignUp ? "Sign Up" : "Sign In") {
-                        performAuth()
+                        .foregroundColor(.accentColor)
+                        .buttonStyle(.plain)
                     }
-                    .disabled(authEmail.isEmpty || authPassword.isEmpty || isAuthLoading)
-
-                    if isAuthLoading {
-                        ProgressView()
-                            .controlSize(.small)
-                            .scaleEffect(0.7)
-                    }
-
-                    Spacer()
-
-                    Button(isSignUp ? "Already have an account" : "Create an account") {
-                        isSignUp.toggle()
-                        authError = nil
-                    }
-                    .font(.system(size: 11))
-                    .foregroundColor(.accentColor)
-                    .buttonStyle(.plain)
                 }
-
-                Divider()
-
-                Button("Disable Premium") {
-                    premiumService.status.enabled = false
-                }
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-                .buttonStyle(.plain)
+                .padding(8)
             }
-            .padding(8)
         }
     }
 
-    // MARK: - Authenticated + Team
+    // MARK: - Authenticated
 
     private var authenticatedSection: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -155,12 +171,105 @@ struct TeamSettingsTab: View {
                 .padding(8)
             }
 
-            // Team section
+            // Pending invites — always show if available
+            if premiumService.status.team == nil && !pendingInvites.isEmpty {
+                invitesSection
+            }
+
+            // Team exists: full management
             if let team = premiumService.status.team {
                 teamSection(team)
-            } else {
+                cloudSyncSection(team)
+                ossGrantSection(team)
+            }
+            // No team + not paid: paywall
+            else if !premiumService.status.subscriptionActive {
+                paywallSection
+            }
+            // Paid + no team: create team
+            else {
                 createTeamSection
             }
+        }
+        .task {
+            if premiumService.status.team == nil {
+                await loadPendingInvites()
+            }
+        }
+    }
+
+    // MARK: - Pending Invites
+
+    private var invitesSection: some View {
+        GroupBox("Team Invitations") {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(pendingInvites) { invite in
+                    HStack(spacing: 10) {
+                        Image(systemName: "envelope.badge")
+                            .font(.system(size: 14))
+                            .foregroundColor(.orange)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(invite.teamName)
+                                .font(.system(size: 12, weight: .medium))
+                            Text("Invited as \(invite.role)")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        Button("Join Team") {
+                            joinTeam(inviteId: invite.id)
+                        }
+                        .disabled(isJoining)
+                        .font(.system(size: 11))
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    // MARK: - Paywall
+
+    private var paywallSection: some View {
+        GroupBox("Subscribe to Teams") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("A subscription is required to create a team and enable collaboration features.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+
+                Picker("Plan", selection: $selectedPlan) {
+                    Text("Starter — $9/mo").tag("starter")
+                    Text("Agency — $40/mo").tag("agency")
+                }
+                .pickerStyle(.segmented)
+                .font(.system(size: 11))
+
+                HStack {
+                    Text("Extra seats: \(extraSeats)")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    Slider(value: Binding(
+                        get: { Double(extraSeats) },
+                        set: { extraSeats = Int($0) }
+                    ), in: 0...20, step: 1)
+                }
+
+                Button {
+                    openUserCheckout()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "creditcard")
+                        Text(isBillingLoading ? "Opening..." : "Subscribe")
+                    }
+                }
+                .disabled(isBillingLoading)
+                .font(.system(size: 12))
+            }
+            .padding(8)
         }
     }
 
@@ -287,6 +396,181 @@ struct TeamSettingsTab: View {
         }
     }
 
+    // MARK: - Cloud Sync
+
+    private func cloudSyncSection(_ team: Team) -> some View {
+        GroupBox("Cloud Sync") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Toggle("Enable Cloud Sync", isOn: Binding(
+                        get: { premiumService.status.syncEnabled },
+                        set: { enabled in
+                            if enabled {
+                                SyncEngine.shared.start()
+                                premiumService.status.syncEnabled = true
+                            } else {
+                                SyncEngine.shared.stop()
+                                premiumService.status.syncEnabled = false
+                            }
+                        }
+                    ))
+                    .toggleStyle(.switch)
+                    .font(.system(size: 12))
+                }
+
+                if premiumService.status.syncEnabled {
+                    // Status row
+                    HStack(spacing: 8) {
+                        syncStatusIndicator
+                        Spacer()
+                        if let lastSync = syncEngine.lastSyncedAt {
+                            Text("Last sync: \(lastSync, style: .relative) ago")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+
+                        Button {
+                            Task { await syncEngine.syncAllProjects() }
+                        } label: {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 11))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.accentColor)
+                        .disabled(syncEngine.status == .syncing)
+                    }
+
+                    Divider()
+
+                    Text("Tasks and notes in synced projects are shared with your team in real time.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+
+                    if syncEngine.realtimeConnected {
+                        Label("Realtime connected", systemImage: "bolt.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.green)
+                    }
+
+                    if let error = syncError {
+                        Text(error)
+                            .font(.system(size: 11))
+                            .foregroundColor(.red)
+                    }
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    @ViewBuilder
+    private var syncStatusIndicator: some View {
+        switch syncEngine.status {
+        case .idle:
+            Label("Synced", systemImage: "checkmark.circle.fill")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.green)
+        case .syncing:
+            HStack(spacing: 4) {
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.6)
+                Text("Syncing...")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+        case .error(let msg):
+            Label("Error", systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.red)
+                .help(msg)
+        case .offline:
+            Label("Offline", systemImage: "wifi.slash")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.orange)
+        }
+    }
+
+    // MARK: - OSS Grant
+
+    private func ossGrantSection(_ team: Team) -> some View {
+        GroupBox("Open Source Grant") {
+            VStack(alignment: .leading, spacing: 10) {
+                if let grant = premiumService.status.grant {
+                    // Show existing grant
+                    HStack {
+                        Label(grant.grantType.replacingOccurrences(of: "_", with: " ").capitalized,
+                              systemImage: "heart.fill")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.pink)
+
+                        Spacer()
+
+                        Text(grant.planTier.capitalized + " plan")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+
+                    if let repo = grant.repoUrl {
+                        Text(repo)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+
+                    if let expires = grant.expiresAt {
+                        Text("Expires: \(expires)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+
+                    if let note = grant.note {
+                        Text(note)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .italic()
+                    }
+                } else {
+                    // Submit grant request
+                    Text("Open source projects and contributors can apply for a free plan upgrade.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+
+                    Picker("Type", selection: $ossGrantType) {
+                        Text("OSS Project").tag("oss_project")
+                        Text("OSS Contributor").tag("oss_contributor")
+                    }
+                    .pickerStyle(.segmented)
+                    .font(.system(size: 11))
+
+                    TextField("Repository URL (e.g. github.com/org/repo)", text: $ossRepoUrl)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+
+                    if let msg = ossMessage {
+                        Text(msg)
+                            .font(.system(size: 11))
+                            .foregroundColor(msg.contains("submitted") ? .green : .red)
+                    }
+
+                    HStack {
+                        Button("Submit Request") {
+                            submitOSSGrant(team)
+                        }
+                        .disabled(ossRepoUrl.trimmingCharacters(in: .whitespaces).isEmpty || ossSubmitting)
+                        .font(.system(size: 11))
+
+                        if ossSubmitting {
+                            ProgressView()
+                                .controlSize(.small)
+                                .scaleEffect(0.7)
+                        }
+                    }
+                }
+            }
+            .padding(8)
+        }
+    }
+
     // MARK: - Create Team
 
     private var createTeamSection: some View {
@@ -353,6 +637,13 @@ struct TeamSettingsTab: View {
 
     private func inviteMember() {
         guard let team = premiumService.status.team else { return }
+
+        // Check seat limit
+        if case .blocked(let reason) = enforcer.canAddMember(currentCount: members.count) {
+            planBlock = reason
+            return
+        }
+
         isInviting = true
         Task {
             do {
@@ -395,6 +686,25 @@ struct TeamSettingsTab: View {
         }
     }
 
+    private func submitOSSGrant(_ team: Team) {
+        ossSubmitting = true
+        ossMessage = nil
+        Task {
+            do {
+                try await premiumService.requestOSSGrant(
+                    teamId: team.id,
+                    grantType: ossGrantType,
+                    repoUrl: ossRepoUrl.trimmingCharacters(in: .whitespaces)
+                )
+                ossMessage = "Request submitted! We'll review it shortly."
+                ossRepoUrl = ""
+            } catch {
+                ossMessage = error.localizedDescription
+            }
+            ossSubmitting = false
+        }
+    }
+
     private func openCheckout(_ team: Team) {
         Task {
             do {
@@ -406,6 +716,19 @@ struct TeamSettingsTab: View {
         }
     }
 
+    private func openUserCheckout() {
+        isBillingLoading = true
+        Task {
+            do {
+                let url = try await premiumService.createCheckout(teamId: nil, plan: selectedPlan, extraSeats: extraSeats)
+                NSWorkspace.shared.open(url)
+            } catch {
+                print("TeamSettings: failed to open checkout: \(error)")
+            }
+            isBillingLoading = false
+        }
+    }
+
     private func openBilling(_ team: Team) {
         Task {
             do {
@@ -414,6 +737,28 @@ struct TeamSettingsTab: View {
             } catch {
                 print("TeamSettings: failed to open billing: \(error)")
             }
+        }
+    }
+
+    private func loadPendingInvites() async {
+        do {
+            pendingInvites = try await premiumService.getMyInvites()
+        } catch {
+            print("TeamSettings: failed to load invites: \(error)")
+        }
+    }
+
+    private func joinTeam(inviteId: String) {
+        isJoining = true
+        Task {
+            do {
+                try await premiumService.acceptInviteById(inviteId: inviteId)
+                pendingInvites = []
+                settings.premiumEnabled = true
+            } catch {
+                print("TeamSettings: failed to join team: \(error)")
+            }
+            isJoining = false
         }
     }
 }

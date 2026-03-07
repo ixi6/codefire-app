@@ -20,6 +20,7 @@ struct TaskItem: Codable, Identifiable, FetchableRecord, MutablePersistableRecor
     var gmailThreadId: String?
     var gmailMessageId: String?
     var recordingId: String?
+    var updatedAt: Date?
 
     static let databaseTableName = "taskItems"
 

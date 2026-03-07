@@ -24,10 +24,10 @@ describe('all migrations', () => {
     try { fs.unlinkSync(dbPath + '-shm') } catch {}
   })
 
-  it('runs all 20 migrations without error', () => {
+  it('runs all 24 migrations without error', () => {
     const migrator = new Migrator(db, migrations)
     expect(() => migrator.migrate()).not.toThrow()
-    expect(migrator.getCurrentVersion()).toBe(20)
+    expect(migrator.getCurrentVersion()).toBe(24)
   })
 
   it('creates all base tables', () => {
@@ -44,7 +44,7 @@ describe('all migrations', () => {
       'chatConversations', 'chatMessages', 'clients', 'codeChunks', 'codebaseSnapshots',
       'generatedImages', 'gmailAccounts', 'indexRequests', 'indexState', 'indexedFiles',
       'notes', 'patterns', 'processedEmails', 'projects', 'recordings',
-      'sessions', 'taskItems', 'taskNotes', 'whitelistRules'
+      'sessions', 'syncState', 'taskItems', 'taskNotes', 'whitelistRules'
     ]
 
     for (const table of expected) {
@@ -77,7 +77,7 @@ describe('all migrations', () => {
     const migrator = new Migrator(db, migrations)
     migrator.migrate()
     migrator.migrate() // should not throw or duplicate data
-    expect(migrator.getCurrentVersion()).toBe(20)
+    expect(migrator.getCurrentVersion()).toBe(24)
 
     // __global__ project should still be exactly 1
     const count = db.prepare("SELECT COUNT(*) as c FROM projects WHERE id = '__global__'").get() as { c: number }

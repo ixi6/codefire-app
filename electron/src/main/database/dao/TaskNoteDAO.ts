@@ -21,18 +21,20 @@ export class TaskNoteDAO {
     content: string
     source?: string
     sessionId?: string
+    mentions?: string[]
   }): TaskNote {
     const now = new Date().toISOString()
     const result = this.db
       .prepare(
-        `INSERT INTO taskNotes (taskId, content, source, sessionId, createdAt)
-         VALUES (?, ?, ?, ?, ?)`
+        `INSERT INTO taskNotes (taskId, content, source, sessionId, mentions, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?)`
       )
       .run(
         data.taskId,
         data.content,
         data.source ?? 'manual',
         data.sessionId ?? null,
+        data.mentions && data.mentions.length > 0 ? JSON.stringify(data.mentions) : null,
         now
       )
     return this.getById(Number(result.lastInsertRowid))!

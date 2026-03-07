@@ -88,6 +88,7 @@ struct TaskItem: Codable, FetchableRecord, MutablePersistableRecord {
     var labels: String?
     var attachments: String?
     var isGlobal: Bool
+    var updatedAt: Date?
     static let databaseTableName = "taskItems"
 
     mutating func didInsert(_ inserted: InsertionSuccess) {
@@ -102,6 +103,8 @@ struct TaskNote: Codable, FetchableRecord, MutablePersistableRecord {
     var source: String
     var sessionId: String?
     var createdAt: Date
+    var updatedAt: Date?
+    var mentions: String?
     static let databaseTableName = "taskNotes"
 
     mutating func didInsert(_ inserted: InsertionSuccess) {

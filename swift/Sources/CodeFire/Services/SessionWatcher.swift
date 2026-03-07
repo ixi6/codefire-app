@@ -10,6 +10,8 @@ extension Notification.Name {
     static let gmailDidSync = Notification.Name("gmailDidSync")
     /// Posted when a Claude Code process exits (transitions from running to not-running).
     static let claudeProcessDidExit = Notification.Name("claudeProcessDidExit")
+    /// Posted when a live session becomes inactive (120s of no file changes).
+    static let sessionDidEnd = Notification.Name("sessionDidEnd")
 }
 
 @MainActor

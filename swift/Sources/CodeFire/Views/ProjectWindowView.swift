@@ -1,5 +1,17 @@
 import SwiftUI
 
+/// Data passed from sessionDidEnd notification to the share prompt sheet.
+struct SessionEndInfo: Identifiable {
+    let id = UUID()
+    let sessionId: String
+    let slug: String?
+    let model: String?
+    let gitBranch: String?
+    let filesChanged: [String]
+    let startedAt: Date?
+    let durationMins: Int?
+}
+
 /// Self-contained root view for project-specific windows.
 ///
 /// Per-project services (SessionWatcher, LiveSessionMonitor, etc.) are created per window.
@@ -24,6 +36,7 @@ struct ProjectWindowView: View {
 
     @State private var projectPath: String = ""
     @State private var project: Project?
+    @State private var sessionShareInfo: SessionEndInfo?
 
     var body: some View {
         Group {
@@ -76,6 +89,35 @@ struct ProjectWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             liveMonitor.resumeMonitoring()
             githubService.resumeMonitoring()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sessionDidEnd)) { notification in
+            // Only show auto-share if premium sync is enabled
+            guard PremiumService.shared.status.syncEnabled,
+                  let info = notification.userInfo,
+                  let sessionId = info["sessionId"] as? String else { return }
+            sessionShareInfo = SessionEndInfo(
+                sessionId: sessionId,
+                slug: info["slug"] as? String,
+                model: info["model"] as? String,
+                gitBranch: info["gitBranch"] as? String,
+                filesChanged: info["filesChanged"] as? [String] ?? [],
+                startedAt: info["startedAt"] as? Date,
+                durationMins: info["durationMins"] as? Int
+            )
+        }
+        .sheet(item: $sessionShareInfo) { info in
+            SessionSharePromptView(
+                sessionId: info.sessionId,
+                slug: info.slug,
+                model: info.model,
+                gitBranch: info.gitBranch,
+                filesChanged: info.filesChanged,
+                startedAt: info.startedAt,
+                durationMins: info.durationMins,
+                onDismiss: { sessionShareInfo = nil }
+            )
+            .environmentObject(appState)
+            .environmentObject(claudeService)
         }
     }
 

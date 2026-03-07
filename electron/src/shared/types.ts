@@ -145,6 +145,8 @@ export type PremiumChannel =
   | 'premium:listInvites'
   | 'premium:cancelInvite'
   | 'premium:acceptInvite'
+  | 'premium:getMyInvites'
+  | 'premium:acceptInviteById'
   | 'premium:syncProject'
   | 'premium:unsyncProject'
   | 'premium:listSyncedProjects'

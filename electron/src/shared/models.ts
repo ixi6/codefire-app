@@ -10,6 +10,7 @@ export interface Project {
   clientId: string | null
   tags: string | null
   sortOrder: number
+  repoUrl: string | null
 }
 
 export interface Session {
@@ -70,6 +71,7 @@ export interface TaskItem {
   gmailMessageId: string | null
   recordingId: string | null
   createdAt: string
+  updatedAt: string | null
   completedAt: string | null
 }
 
@@ -79,6 +81,7 @@ export interface TaskNote {
   content: string
   source: string // 'manual' | 'claude' | 'system'
   sessionId: string | null
+  mentions: string | null // JSON array of user UUIDs
   createdAt: string
 }
 

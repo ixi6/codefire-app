@@ -9,10 +9,19 @@ export class TeamService {
     const { data: { user } } = await client.auth.getUser()
     if (!user) throw new Error('Not authenticated')
 
+    // Check if user has a pre-team subscription to transfer
+    const { data: profile } = await client.from('users')
+      .select('stripe_customer_id, stripe_subscription_id')
+      .eq('id', user.id)
+      .single()
+
     const { data, error } = await client.from('teams').insert({
       name,
       slug,
       owner_id: user.id,
+      // Transfer user's Stripe IDs to the new team
+      stripe_customer_id: profile?.stripe_customer_id || null,
+      stripe_subscription_id: profile?.stripe_subscription_id || null,
     }).select().single()
 
     if (error) throw new Error(error.message)
@@ -22,6 +31,14 @@ export class TeamService {
       user_id: user.id,
       role: 'owner',
     })
+
+    // Clear user-level subscription IDs (now owned by team)
+    if (profile?.stripe_subscription_id) {
+      await client.from('users').update({
+        stripe_customer_id: null,
+        stripe_subscription_id: null,
+      }).eq('id', user.id)
+    }
 
     return {
       id: data.id,
@@ -96,6 +113,56 @@ export class TeamService {
     const { data: invite, error } = await client.from('team_invites')
       .select('*')
       .eq('token', token)
+      .eq('status', 'pending')
+      .single()
+
+    if (error || !invite) throw new Error('Invalid or expired invite')
+
+    await client.from('team_members').insert({
+      team_id: invite.team_id,
+      user_id: user.id,
+      role: invite.role,
+    })
+
+    await client.from('team_invites').update({ status: 'accepted' }).eq('id', invite.id)
+  }
+
+  async getMyInvites(): Promise<(TeamInvite & { teamName: string })[]> {
+    const client = getSupabaseClient()
+    if (!client) throw new Error('Supabase not configured')
+
+    const { data: { user } } = await client.auth.getUser()
+    if (!user) throw new Error('Not authenticated')
+
+    const { data, error } = await client.from('team_invites')
+      .select('*, teams(name)')
+      .eq('email', user.email)
+      .eq('status', 'pending')
+
+    if (error) throw new Error(error.message)
+
+    return (data || []).map((inv: any) => ({
+      id: inv.id,
+      teamId: inv.team_id,
+      email: inv.email,
+      role: inv.role,
+      status: inv.status,
+      createdAt: inv.created_at,
+      expiresAt: inv.expires_at,
+      teamName: inv.teams?.name || 'Unknown Team',
+    }))
+  }
+
+  async acceptInviteById(inviteId: string): Promise<void> {
+    const client = getSupabaseClient()
+    if (!client) throw new Error('Supabase not configured')
+
+    const { data: { user } } = await client.auth.getUser()
+    if (!user) throw new Error('Not authenticated')
+
+    const { data: invite, error } = await client.from('team_invites')
+      .select('*')
+      .eq('id', inviteId)
       .eq('status', 'pending')
       .single()
 

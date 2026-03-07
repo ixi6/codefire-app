@@ -12,6 +12,8 @@ struct SessionDetailView: View {
     @State private var summaryError: String?
     @State private var extractedTaskCount: Int?
     @State private var extractError: String?
+    @State private var isShareing = false
+    @State private var shareSuccess = false
 
     var body: some View {
         ScrollView {
@@ -202,6 +204,32 @@ struct SessionDetailView: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.secondary)
                         .buttonStyle(.plain)
+
+                        if PremiumService.shared.status.syncEnabled {
+                            Divider().frame(height: 12)
+                            if shareSuccess {
+                                Label("Shared!", systemImage: "checkmark.circle.fill")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(.green)
+                            } else {
+                                Button {
+                                    shareWithTeam(summary: ai)
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        if isShareing {
+                                            ProgressView().scaleEffect(0.5)
+                                        }
+                                        Image(systemName: "square.and.arrow.up")
+                                            .font(.system(size: 9))
+                                        Text("Share with Team")
+                                            .font(.system(size: 10, weight: .medium))
+                                    }
+                                    .foregroundColor(.purple)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(isShareing)
+                            }
+                        }
                     }
                 }
                 .padding(12)
@@ -381,6 +409,46 @@ struct SessionDetailView: View {
     }
 
     // MARK: - AI Generation
+
+    private func shareWithTeam(summary: String) {
+        isShareing = true
+        Task {
+            let premium = PremiumService.shared
+            let filesChanged: [String] = {
+                guard let json = session.filesChanged,
+                      let data = json.data(using: .utf8),
+                      let arr = try? JSONDecoder().decode([String].self, from: data)
+                else { return [] }
+                return arr
+            }()
+
+            let toShare = SessionSummary(
+                id: "",
+                projectId: appState.currentProject?.id ?? "",
+                userId: premium.status.user?.id ?? "",
+                sessionSlug: session.slug,
+                model: session.model,
+                gitBranch: session.gitBranch,
+                summary: summary,
+                filesChanged: filesChanged,
+                durationMins: session.startedAt.flatMap { start in
+                    session.endedAt.map { end in Int(end.timeIntervalSince(start) / 60) }
+                },
+                startedAt: session.startedAt.map { ISO8601DateFormatter().string(from: $0) },
+                endedAt: session.endedAt.map { ISO8601DateFormatter().string(from: $0) },
+                sharedAt: ISO8601DateFormatter().string(from: Date()),
+                user: nil
+            )
+
+            do {
+                _ = try await premium.shareSessionSummary(toShare)
+                shareSuccess = true
+            } catch {
+                summaryError = "Share failed: \(error.localizedDescription)"
+            }
+            isShareing = false
+        }
+    }
 
     private func generateAISummary() {
         guard let project = appState.currentProject,

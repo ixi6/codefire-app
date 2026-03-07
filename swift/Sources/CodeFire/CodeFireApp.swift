@@ -107,6 +107,8 @@ struct CodeFireApp: App {
 
     /// Copies the CodeFireMCP binary from the app bundle to Application Support
     /// so Claude Code can spawn it as an MCP server (binaries inside .app bundles hang).
+    /// Also creates a symlink at ~/.local/bin/CodeFireMCP (space-free path) because
+    /// MCP clients split the command string on spaces, breaking paths with "Application Support".
     private static func deployMCPBinary() {
         guard let execURL = Bundle.main.executableURL else { return }
         let bundleMCP = execURL.deletingLastPathComponent().appendingPathComponent("CodeFireMCP")
@@ -116,20 +118,37 @@ struct CodeFireApp: App {
             .first!.appendingPathComponent("CodeFire/bin", isDirectory: true)
         let destBinary = dest.appendingPathComponent("CodeFireMCP")
 
-        // Skip if already up-to-date (same size)
+        // Skip copy if already up-to-date (same size)
+        let needsCopy: Bool
         if let srcAttr = try? FileManager.default.attributesOfItem(atPath: bundleMCP.path),
            let dstAttr = try? FileManager.default.attributesOfItem(atPath: destBinary.path),
            let srcSize = srcAttr[.size] as? Int,
            let dstSize = dstAttr[.size] as? Int,
            srcSize == dstSize {
-            return
+            needsCopy = false
+        } else {
+            needsCopy = true
         }
 
-        try? FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
-        try? FileManager.default.removeItem(at: destBinary)
-        try? FileManager.default.copyItem(at: bundleMCP, to: destBinary)
-        // Ensure executable
-        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destBinary.path)
+        if needsCopy {
+            try? FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+            try? FileManager.default.removeItem(at: destBinary)
+            try? FileManager.default.copyItem(at: bundleMCP, to: destBinary)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destBinary.path)
+        }
+
+        // Create symlink at ~/.local/bin/CodeFireMCP (space-free path for MCP clients)
+        let symlinkDir = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".local/bin", isDirectory: true)
+        let symlinkPath = symlinkDir.appendingPathComponent("CodeFireMCP")
+        try? FileManager.default.createDirectory(at: symlinkDir, withIntermediateDirectories: true)
+        // Recreate symlink if target changed or missing
+        if let existing = try? FileManager.default.destinationOfSymbolicLink(atPath: symlinkPath.path),
+           existing == destBinary.path {
+            // Symlink already correct
+        } else {
+            try? FileManager.default.removeItem(at: symlinkPath)
+            try? FileManager.default.createSymbolicLink(at: symlinkPath, withDestinationURL: destBinary)
+        }
     }
 
     /// Migrates existing user data from old "Context" paths to new "CodeFire" paths.
