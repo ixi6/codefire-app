@@ -257,37 +257,56 @@ if (config.mcpServerAutoStart) {
 
 app.whenReady().then(() => {
   // ─── Content Security Policy ────────────────────────────────────────────────
+  // Applied only to the app's own pages, not to webview content (which has its own origin)
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self';" +
-          " script-src 'self';" +
-          " style-src 'self' 'unsafe-inline';" +
-          " img-src 'self' data: blob: https:;" +
-          " font-src 'self' data:;" +
-          " connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:*;" +
-          " media-src 'self' blob:;" +
-          " worker-src 'self' blob:;"
-        ],
-      },
-    })
+    // Only apply CSP to our own app pages, not external URLs loaded in webviews
+    const isAppContent =
+      details.url.startsWith('file://') ||
+      (process.env.VITE_DEV_SERVER_URL && details.url.startsWith(process.env.VITE_DEV_SERVER_URL))
+
+    if (isAppContent) {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'self';" +
+            " script-src 'self' 'unsafe-inline';" + // unsafe-inline needed for Vite HMR in dev
+            " style-src 'self' 'unsafe-inline';" +
+            " img-src 'self' data: blob: https:;" +
+            " font-src 'self' data:;" +
+            " connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:*;" +
+            " media-src 'self' blob:;" +
+            " worker-src 'self' blob:;"
+          ],
+        },
+      })
+    } else {
+      callback({ responseHeaders: details.responseHeaders })
+    }
   })
 
   // ─── Navigation guards ──────────────────────────────────────────────────────
-  // Block renderer navigation to unexpected URLs
+  // Block BrowserWindow navigation to unexpected URLs.
+  // Webview tags manage their own navigation and are excluded.
   app.on('web-contents-created', (_event, contents) => {
+    // Only guard BrowserWindow frames, not webview guests
+    if (contents.getType() === 'webview') return
+
     // Block navigation away from app content
     contents.on('will-navigate', (event, navigationUrl) => {
-      const parsedUrl = new URL(navigationUrl)
-      // Allow Vite dev server and file:// (app content) only
-      if (parsedUrl.protocol === 'file:') return
-      if (process.env.VITE_DEV_SERVER_URL && navigationUrl.startsWith(process.env.VITE_DEV_SERVER_URL)) return
+      try {
+        const parsedUrl = new URL(navigationUrl)
+        // Allow file:// (app content in production)
+        if (parsedUrl.protocol === 'file:') return
+        // Allow Vite dev server
+        if (process.env.VITE_DEV_SERVER_URL && navigationUrl.startsWith(process.env.VITE_DEV_SERVER_URL)) return
+      } catch {
+        // Invalid URL — block it
+      }
       event.preventDefault()
     })
 
-    // Block new window creation — deny popup windows
+    // Block new window creation — deny popup windows from the main renderer
     contents.setWindowOpenHandler(() => {
       return { action: 'deny' }
     })

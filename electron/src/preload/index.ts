@@ -11,6 +11,11 @@ const ALLOWED_SEND_CHANNELS = new Set<string>([
   'terminal:resize',
 ])
 
+/** Prefixes allowed for dynamic send channels (e.g., browser:commandResult:123) */
+const ALLOWED_SEND_PREFIXES = [
+  'browser:commandResult:',
+]
+
 /**
  * Allowed channels for `on` (main → renderer event listeners).
  */
@@ -22,11 +27,13 @@ const ALLOWED_RECEIVE_CHANNELS = new Set<string>([
   'mcp:statusChanged',
   'menu:openSettings',
   'browser:commandRequest',
-  'browser:commandResult',
-  'file:changed',
   'sessions:liveUpdate',
-  'premium:notification',
 ])
+
+function isSendAllowed(channel: string): boolean {
+  if (ALLOWED_SEND_CHANNELS.has(channel)) return true
+  return ALLOWED_SEND_PREFIXES.some((prefix) => channel.startsWith(prefix))
+}
 
 contextBridge.exposeInMainWorld('api', {
   invoke: (channel: IpcChannel, ...args: unknown[]) =>
@@ -42,7 +49,7 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener(channel, subscription)
   },
   send: (channel: string, ...args: unknown[]) => {
-    if (!ALLOWED_SEND_CHANNELS.has(channel)) {
+    if (!isSendAllowed(channel)) {
       console.warn(`[preload] Blocked send() for unrecognized channel: ${channel}`)
       return
     }
