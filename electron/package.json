@@ -76,6 +76,7 @@
     "appId": "com.codefire.electron",
     "productName": "CodeFire",
     "publish": null,
+    "npmRebuild": false,
     "directories": {
       "output": "release"
     },
