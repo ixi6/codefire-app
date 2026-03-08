@@ -123,11 +123,24 @@ args = []
 }
 ```
 
-> Electron users: the MCP server path differs by platform. See the [Getting Started guide](https://codefire.app/getting-started) for exact paths.
+> Electron users: the MCP server path differs by platform. See the setup guides below for exact paths.
 
 </details>
 
-### 4. Start Coding
+### 4. Add System Instructions
+
+For the best experience, add CodeFire instructions to your CLI's system prompt file. This teaches your AI agent how to use CodeFire's tools effectively — session workflows, task tracking, notes, and more.
+
+| CLI | Setup Guide |
+|-----|-------------|
+| Claude Code | [codefire-claude-md-setup.md](docs/codefire-claude-md-setup.md) |
+| Gemini CLI | [codefire-gemini-setup.md](docs/codefire-gemini-setup.md) |
+| Codex CLI | [codefire-codex-setup.md](docs/codefire-codex-setup.md) |
+| OpenCode | [codefire-opencode-setup.md](docs/codefire-opencode-setup.md) |
+
+Each guide includes platform-specific MCP connection instructions (macOS, Windows, Linux) and copy-pasteable system instructions.
+
+### 5. Start Coding
 
 Open a project folder in CodeFire, then start a CLI session. Your agent now has access to persistent memory, task tracking, browser automation, and code search — all through MCP.
 
