@@ -213,16 +213,18 @@ class SyncEngine: ObservableObject {
         guard let userId = premium.status.user?.id else { return }
 
         for record in dirtyRecords {
-            if record.isDeleted {
+            if record.isDeleted == 1 {
                 if let remoteId = record.remoteId {
                     try await premium.supabaseDeletePublic("synced_tasks", id: remoteId)
                 }
+                guard let localIdInt = Int64(record.localId) else { continue }
                 try await db.write { db in
-                    try SyncState.purgeDeleted(entityType: .task, localId: record.localId, in: db)
+                    try SyncState.purgeDeleted(entityType: .task, localId: localIdInt, in: db)
                 }
             } else {
+                guard let localIdInt = Int64(record.localId) else { continue }
                 let task = try await db.read { db in
-                    try TaskItem.fetchOne(db, key: record.localId)
+                    try TaskItem.fetchOne(db, key: localIdInt)
                 }
                 guard let task else { continue }
 
@@ -258,7 +260,7 @@ class SyncEngine: ObservableObject {
                 }
 
                 try await db.write { db in
-                    try SyncState.markSynced(entityType: .task, localId: record.localId, remoteId: remoteId, in: db)
+                    try SyncState.markSynced(entityType: .task, localId: localIdInt, remoteId: remoteId, in: db)
                 }
             }
         }
@@ -274,16 +276,18 @@ class SyncEngine: ObservableObject {
         guard let userId = premium.status.user?.id else { return }
 
         for record in dirtyRecords {
-            if record.isDeleted {
+            if record.isDeleted == 1 {
                 if let remoteId = record.remoteId {
                     try await premium.supabaseDeletePublic("synced_notes", id: remoteId)
                 }
+                guard let localIdInt = Int64(record.localId) else { continue }
                 try await db.write { db in
-                    try SyncState.purgeDeleted(entityType: .note, localId: record.localId, in: db)
+                    try SyncState.purgeDeleted(entityType: .note, localId: localIdInt, in: db)
                 }
             } else {
+                guard let localIdInt = Int64(record.localId) else { continue }
                 let note = try await db.read { db in
-                    try Note.fetchOne(db, key: record.localId)
+                    try Note.fetchOne(db, key: localIdInt)
                 }
                 guard let note else { continue }
 
@@ -308,7 +312,7 @@ class SyncEngine: ObservableObject {
                 }
 
                 try await db.write { db in
-                    try SyncState.markSynced(entityType: .note, localId: record.localId, remoteId: remoteId, in: db)
+                    try SyncState.markSynced(entityType: .note, localId: localIdInt, remoteId: remoteId, in: db)
                 }
             }
         }
@@ -324,16 +328,18 @@ class SyncEngine: ObservableObject {
         guard let userId = premium.status.user?.id else { return }
 
         for record in dirtyRecords {
-            if record.isDeleted {
+            if record.isDeleted == 1 {
                 if let remoteId = record.remoteId {
                     try await premium.supabaseDeletePublic("synced_task_notes", id: remoteId)
                 }
+                guard let localIdInt = Int64(record.localId) else { continue }
                 try await db.write { db in
-                    try SyncState.purgeDeleted(entityType: .taskNote, localId: record.localId, in: db)
+                    try SyncState.purgeDeleted(entityType: .taskNote, localId: localIdInt, in: db)
                 }
             } else {
+                guard let localIdInt = Int64(record.localId) else { continue }
                 let taskNote = try await db.read { db in
-                    try TaskNote.fetchOne(db, key: record.localId)
+                    try TaskNote.fetchOne(db, key: localIdInt)
                 }
                 guard let taskNote else { continue }
 
@@ -365,7 +371,7 @@ class SyncEngine: ObservableObject {
                 }
 
                 try await db.write { db in
-                    try SyncState.markSynced(entityType: .taskNote, localId: record.localId, remoteId: remoteId, in: db)
+                    try SyncState.markSynced(entityType: .taskNote, localId: localIdInt, remoteId: remoteId, in: db)
                 }
             }
         }
@@ -390,22 +396,22 @@ class SyncEngine: ObservableObject {
 
                 if let localId = try SyncState.localId(forRemoteId: remoteId, entityType: .task, in: db) {
                     let syncState = try SyncState.fetchOne(db, sql:
-                        "SELECT * FROM syncState WHERE entityType = 'task' AND localId = ?",
+                        "SELECT * FROM syncState WHERE entityType = 'task' AND localId = CAST(? AS TEXT)",
                         arguments: [localId]
                     )
 
-                    if let syncState, syncState.isDirty {
+                    if let syncState, syncState.dirty == 1 {
                         let localTask = try TaskItem.fetchOne(db, key: localId)
                         let localUpdated = localTask?.updatedAt ?? localTask?.createdAt ?? Date.distantPast
                         let remoteUpdated = Self.parseDate(remote["updated_at"]) ?? Date.distantPast
 
                         if remoteUpdated > localUpdated {
                             try Self.applyRemoteTask(remote, localId: localId, in: db)
-                            try db.execute(sql: "UPDATE syncState SET isDirty = 0, lastSyncedAt = CURRENT_TIMESTAMP WHERE entityType = 'task' AND localId = ?", arguments: [localId])
+                            try db.execute(sql: "UPDATE syncState SET dirty = 0, lastSyncedAt = CURRENT_TIMESTAMP WHERE entityType = 'task' AND localId = CAST(? AS TEXT)", arguments: [localId])
                         }
                     } else {
                         try Self.applyRemoteTask(remote, localId: localId, in: db)
-                        try db.execute(sql: "UPDATE syncState SET lastSyncedAt = CURRENT_TIMESTAMP WHERE entityType = 'task' AND localId = ?", arguments: [localId])
+                        try db.execute(sql: "UPDATE syncState SET lastSyncedAt = CURRENT_TIMESTAMP WHERE entityType = 'task' AND localId = CAST(? AS TEXT)", arguments: [localId])
                     }
                 } else {
                     let localId = try Self.createLocalTask(from: remote, projectId: projectId, in: db)
@@ -435,22 +441,22 @@ class SyncEngine: ObservableObject {
 
                 if let localId = try SyncState.localId(forRemoteId: remoteId, entityType: .note, in: db) {
                     let syncState = try SyncState.fetchOne(db, sql:
-                        "SELECT * FROM syncState WHERE entityType = 'note' AND localId = ?",
+                        "SELECT * FROM syncState WHERE entityType = 'note' AND localId = CAST(? AS TEXT)",
                         arguments: [localId]
                     )
 
-                    if let syncState, syncState.isDirty {
+                    if let syncState, syncState.dirty == 1 {
                         let localNote = try Note.fetchOne(db, key: localId)
                         let localUpdated = localNote?.updatedAt ?? Date.distantPast
                         let remoteUpdated = Self.parseDate(remote["updated_at"]) ?? Date.distantPast
 
                         if remoteUpdated > localUpdated {
                             try Self.applyRemoteNote(remote, localId: localId, in: db)
-                            try db.execute(sql: "UPDATE syncState SET isDirty = 0, lastSyncedAt = CURRENT_TIMESTAMP WHERE entityType = 'note' AND localId = ?", arguments: [localId])
+                            try db.execute(sql: "UPDATE syncState SET dirty = 0, lastSyncedAt = CURRENT_TIMESTAMP WHERE entityType = 'note' AND localId = CAST(? AS TEXT)", arguments: [localId])
                         }
                     } else {
                         try Self.applyRemoteNote(remote, localId: localId, in: db)
-                        try db.execute(sql: "UPDATE syncState SET lastSyncedAt = CURRENT_TIMESTAMP WHERE entityType = 'note' AND localId = ?", arguments: [localId])
+                        try db.execute(sql: "UPDATE syncState SET lastSyncedAt = CURRENT_TIMESTAMP WHERE entityType = 'note' AND localId = CAST(? AS TEXT)", arguments: [localId])
                     }
                 } else {
                     let localId = try Self.createLocalNote(from: remote, projectId: projectId, in: db)

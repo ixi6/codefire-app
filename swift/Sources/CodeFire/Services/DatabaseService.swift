@@ -415,78 +415,49 @@ class DatabaseService {
             try db.execute(sql: "UPDATE taskNotes SET updatedAt = createdAt WHERE updatedAt IS NULL")
 
             // Sync state: maps local integer IDs to remote Supabase UUIDs
-            try db.create(table: "syncState") { t in
-                t.autoIncrementedPrimaryKey("id")
-                t.column("entityType", .text).notNull()    // "task", "note", "task_note"
-                t.column("localId", .integer).notNull()
-                t.column("remoteId", .text)                 // Supabase UUID, NULL if never pushed
-                t.column("projectId", .text).notNull()
-                t.column("isDirty", .boolean).notNull().defaults(to: true)
-                t.column("isDeleted", .boolean).notNull().defaults(to: false)
-                t.column("lastSyncedAt", .datetime)
-                t.column("syncVersion", .integer).notNull().defaults(to: 0)
-            }
-            try db.create(index: "syncState_unique", on: "syncState",
-                          columns: ["entityType", "localId"], unique: true)
-            try db.create(index: "syncState_dirty", on: "syncState",
-                          columns: ["isDirty", "projectId"])
-
-            // Triggers: auto-mark dirty on task changes
             try db.execute(sql: """
-                CREATE TRIGGER IF NOT EXISTS syncState_task_update
-                AFTER UPDATE ON taskItems
-                BEGIN
-                    UPDATE syncState SET isDirty = 1, syncVersion = syncVersion + 1
-                    WHERE entityType = 'task' AND localId = NEW.id;
-                    UPDATE taskItems SET updatedAt = CURRENT_TIMESTAMP WHERE id = NEW.id AND OLD.updatedAt = NEW.updatedAt;
+                CREATE TABLE IF NOT EXISTS syncState (
+                    entityType TEXT NOT NULL,
+                    localId TEXT NOT NULL,
+                    remoteId TEXT,
+                    projectId TEXT,
+                    lastSyncedAt TEXT,
+                    dirty INTEGER NOT NULL DEFAULT 0,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (entityType, localId)
+                )
+            """)
+
+            // Triggers: auto-mark dirty on changes (INSERT OR REPLACE pattern)
+            try db.execute(sql: """
+                CREATE TRIGGER IF NOT EXISTS sync_task_dirty_update
+                AFTER UPDATE ON taskItems BEGIN
+                    INSERT OR REPLACE INTO syncState (entityType, localId, projectId, remoteId, lastSyncedAt, dirty)
+                    VALUES ('task', CAST(NEW.id AS TEXT), NEW.projectId,
+                        (SELECT remoteId FROM syncState WHERE entityType='task' AND localId=CAST(NEW.id AS TEXT)),
+                        (SELECT lastSyncedAt FROM syncState WHERE entityType='task' AND localId=CAST(NEW.id AS TEXT)),
+                        1);
                 END
             """)
 
             try db.execute(sql: """
-                CREATE TRIGGER IF NOT EXISTS syncState_task_delete
-                AFTER DELETE ON taskItems
-                BEGIN
-                    UPDATE syncState SET isDirty = 1, isDeleted = 1, syncVersion = syncVersion + 1
-                    WHERE entityType = 'task' AND localId = OLD.id;
-                END
-            """)
-
-            // Triggers: auto-mark dirty on note changes
-            try db.execute(sql: """
-                CREATE TRIGGER IF NOT EXISTS syncState_note_update
-                AFTER UPDATE ON notes
-                BEGIN
-                    UPDATE syncState SET isDirty = 1, syncVersion = syncVersion + 1
-                    WHERE entityType = 'note' AND localId = NEW.id;
+                CREATE TRIGGER IF NOT EXISTS sync_note_dirty_update
+                AFTER UPDATE ON notes BEGIN
+                    INSERT OR REPLACE INTO syncState (entityType, localId, projectId, remoteId, lastSyncedAt, dirty)
+                    VALUES ('note', CAST(NEW.id AS TEXT), NEW.projectId,
+                        (SELECT remoteId FROM syncState WHERE entityType='note' AND localId=CAST(NEW.id AS TEXT)),
+                        (SELECT lastSyncedAt FROM syncState WHERE entityType='note' AND localId=CAST(NEW.id AS TEXT)),
+                        1);
                 END
             """)
 
             try db.execute(sql: """
-                CREATE TRIGGER IF NOT EXISTS syncState_note_delete
-                AFTER DELETE ON notes
-                BEGIN
-                    UPDATE syncState SET isDirty = 1, isDeleted = 1, syncVersion = syncVersion + 1
-                    WHERE entityType = 'note' AND localId = OLD.id;
-                END
-            """)
-
-            // Triggers: auto-mark dirty on task note changes
-            try db.execute(sql: """
-                CREATE TRIGGER IF NOT EXISTS syncState_tasknote_update
-                AFTER UPDATE ON taskNotes
-                BEGIN
-                    UPDATE syncState SET isDirty = 1, syncVersion = syncVersion + 1
-                    WHERE entityType = 'task_note' AND localId = NEW.id;
-                    UPDATE taskNotes SET updatedAt = CURRENT_TIMESTAMP WHERE id = NEW.id AND OLD.updatedAt = NEW.updatedAt;
-                END
-            """)
-
-            try db.execute(sql: """
-                CREATE TRIGGER IF NOT EXISTS syncState_tasknote_delete
-                AFTER DELETE ON taskNotes
-                BEGIN
-                    UPDATE syncState SET isDirty = 1, isDeleted = 1, syncVersion = syncVersion + 1
-                    WHERE entityType = 'task_note' AND localId = OLD.id;
+                CREATE TRIGGER IF NOT EXISTS sync_task_note_dirty_insert
+                AFTER INSERT ON taskNotes BEGIN
+                    INSERT OR REPLACE INTO syncState (entityType, localId, projectId, remoteId, lastSyncedAt, dirty)
+                    VALUES ('taskNote', CAST(NEW.id AS TEXT),
+                        (SELECT projectId FROM taskItems WHERE id = NEW.taskId),
+                        NULL, NULL, 1);
                 END
             """)
         }
@@ -522,6 +493,76 @@ class DatabaseService {
         migrator.registerMigration("v20_addTaskNoteMentions") { db in
             try db.alter(table: "taskNotes") { t in
                 t.add(column: "mentions", .text)  // JSON array of user UUIDs
+            }
+        }
+
+        migrator.registerMigration("v21_reconcileSyncState") { db in
+            // Check if syncState has the old Swift schema (isDirty column)
+            let columns = try Row.fetchAll(db, sql: "PRAGMA table_info(syncState)")
+            let colNames = columns.map { $0["name"] as String }
+
+            if colNames.contains("isDirty") {
+                // Drop all old triggers
+                let triggers = try Row.fetchAll(db, sql: """
+                    SELECT name FROM sqlite_master WHERE type='trigger'
+                    AND (name LIKE 'syncState_%' OR name LIKE 'sync_%')
+                """)
+                for trigger in triggers {
+                    let name: String = trigger["name"]
+                    try db.execute(sql: "DROP TRIGGER IF EXISTS \"\(name)\"")
+                }
+
+                // Recreate table with Electron schema
+                try db.execute(sql: """
+                    CREATE TABLE syncState_new (
+                        entityType TEXT NOT NULL,
+                        localId TEXT NOT NULL,
+                        remoteId TEXT,
+                        projectId TEXT,
+                        lastSyncedAt TEXT,
+                        dirty INTEGER NOT NULL DEFAULT 0,
+                        isDeleted INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY (entityType, localId)
+                    );
+                    INSERT INTO syncState_new (entityType, localId, remoteId, projectId, lastSyncedAt, dirty, isDeleted)
+                        SELECT entityType, CAST(localId AS TEXT), remoteId, projectId, lastSyncedAt, isDirty, isDeleted
+                        FROM syncState;
+                    DROP TABLE syncState;
+                    ALTER TABLE syncState_new RENAME TO syncState;
+                """)
+
+                // Recreate Electron-style triggers
+                try db.execute(sql: """
+                    CREATE TRIGGER IF NOT EXISTS sync_task_dirty_update
+                    AFTER UPDATE ON taskItems BEGIN
+                        INSERT OR REPLACE INTO syncState (entityType, localId, projectId, remoteId, lastSyncedAt, dirty)
+                        VALUES ('task', CAST(NEW.id AS TEXT), NEW.projectId,
+                            (SELECT remoteId FROM syncState WHERE entityType='task' AND localId=CAST(NEW.id AS TEXT)),
+                            (SELECT lastSyncedAt FROM syncState WHERE entityType='task' AND localId=CAST(NEW.id AS TEXT)),
+                            1);
+                    END
+                """)
+
+                try db.execute(sql: """
+                    CREATE TRIGGER IF NOT EXISTS sync_note_dirty_update
+                    AFTER UPDATE ON notes BEGIN
+                        INSERT OR REPLACE INTO syncState (entityType, localId, projectId, remoteId, lastSyncedAt, dirty)
+                        VALUES ('note', CAST(NEW.id AS TEXT), NEW.projectId,
+                            (SELECT remoteId FROM syncState WHERE entityType='note' AND localId=CAST(NEW.id AS TEXT)),
+                            (SELECT lastSyncedAt FROM syncState WHERE entityType='note' AND localId=CAST(NEW.id AS TEXT)),
+                            1);
+                    END
+                """)
+
+                try db.execute(sql: """
+                    CREATE TRIGGER IF NOT EXISTS sync_task_note_dirty_insert
+                    AFTER INSERT ON taskNotes BEGIN
+                        INSERT OR REPLACE INTO syncState (entityType, localId, projectId, remoteId, lastSyncedAt, dirty)
+                        VALUES ('taskNote', CAST(NEW.id AS TEXT),
+                            (SELECT projectId FROM taskItems WHERE id = NEW.taskId),
+                            NULL, NULL, 1);
+                    END
+                """)
             }
         }
 

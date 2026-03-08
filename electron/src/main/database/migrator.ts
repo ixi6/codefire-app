@@ -38,13 +38,13 @@ export class Migrator {
         .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='grdb_migrations'")
         .get()
       if (hasSwiftTables) {
-        const maxVersion = this.migrations.length > 0
-          ? this.migrations[this.migrations.length - 1].version
-          : 0
+        // Fast-forward past table-creation migrations only.
+        // Migration 25+ must still run (syncState schema reconciliation, etc.)
+        const fastForwardTo = 24
         this.db
           .prepare('UPDATE schema_version SET version = ?')
-          .run(maxVersion)
-        currentVersion = maxVersion
+          .run(fastForwardTo)
+        currentVersion = fastForwardTo
       }
     }
 
