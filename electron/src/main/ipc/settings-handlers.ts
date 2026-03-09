@@ -14,6 +14,9 @@ import type { CLIProvider } from '../services/DeepLinkService'
  * a compromised renderer from redirecting API traffic.
  */
 const ALLOWED_SETTINGS_KEYS = new Set<keyof AppConfig>([
+  // Profile (Me)
+  'profileName',
+  'profileAvatarUrl',
   // General
   'checkForUpdates',
   'notifyOnNewEmail',

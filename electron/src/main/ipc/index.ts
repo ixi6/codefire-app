@@ -36,6 +36,8 @@ import type { SearchEngine } from '../services/SearchEngine'
 import type { ContextEngine } from '../services/ContextEngine'
 import type { MCPServerManager } from '../services/MCPServerManager'
 import type { FileWatcher } from '../services/FileWatcher'
+import type { AgentProcessWatcher } from '../services/AgentProcessWatcher'
+import { registerAgentHandlers } from './agent-handlers'
 
 export function registerAllHandlers(
   db: Database.Database,
@@ -47,7 +49,8 @@ export function registerAllHandlers(
   searchEngine?: SearchEngine,
   contextEngine?: ContextEngine,
   mcpManager?: MCPServerManager,
-  fileWatcher?: FileWatcher
+  fileWatcher?: FileWatcher,
+  agentWatcher?: AgentProcessWatcher
 ) {
   registerProjectHandlers(db)
   registerTaskHandlers(db)
@@ -91,6 +94,9 @@ export function registerAllHandlers(
   registerBrowserScreenshotHandlers(db)
   if (mcpManager) {
     registerMCPHandlers(mcpManager)
+  }
+  if (agentWatcher) {
+    registerAgentHandlers(agentWatcher)
   }
 
   // Run project discovery at startup to populate claudeProject links (deferred to not block startup)

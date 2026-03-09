@@ -272,9 +272,28 @@ export interface Recording {
   createdAt: string
 }
 
+// ─── Agent Monitor Models ────────────────────────────────────────────────────
+
+export interface AgentInfo {
+  pid: number
+  parentPid: number
+  elapsedSeconds: number
+  command: string // "Claude Code" or "Agent"
+  isPotentiallyFrozen: boolean
+}
+
+export interface AgentMonitorState {
+  claudeProcess: AgentInfo | null
+  agents: AgentInfo[]
+}
+
 // ─── App Config ──────────────────────────────────────────────────────────────
 
 export interface AppConfig {
+  // Profile (Me)
+  profileName: string
+  profileAvatarUrl: string
+
   // General
   checkForUpdates: boolean
   notifyOnNewEmail: boolean

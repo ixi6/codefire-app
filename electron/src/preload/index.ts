@@ -30,6 +30,7 @@ const ALLOWED_RECEIVE_CHANNELS = new Set<string>([
   'sessions:liveUpdate',
   'sessions:updated',
   'tasks:updated',
+  'agent:update',
 ])
 
 function isSendAllowed(channel: string): boolean {

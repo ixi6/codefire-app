@@ -98,13 +98,15 @@ export default function CLIQuickLaunch({ onLaunch, projectPath }: CLIQuickLaunch
         return (
           <div key={cli.id} className="relative" data-cli-menu>
             {/* Main launch button */}
-            <div className="flex items-center">
+            <div
+              className={`flex items-stretch rounded transition-colors ${
+                isPreferred
+                  ? 'bg-[#1a1a1a] border border-[#333]'
+                  : 'hover:bg-[#1a1a1a]'
+              }`}
+            >
               <button
-                className={`flex items-center gap-1 px-2 py-1 rounded-l text-[10px] font-medium transition-colors ${
-                  isPreferred
-                    ? 'bg-[#1a1a1a] border border-r-0 border-[#333]'
-                    : 'hover:bg-[#1a1a1a]'
-                }`}
+                className="flex items-center gap-1 px-2 py-1 rounded-l text-[10px] font-medium"
                 style={{ color: cli.color }}
                 onClick={() => handleLaunch(cli)}
                 title={`Launch ${cli.label}`}
@@ -116,10 +118,8 @@ export default function CLIQuickLaunch({ onLaunch, projectPath }: CLIQuickLaunch
                 {cli.label}
               </button>
               <button
-                className={`flex items-center px-0.5 py-1 rounded-r text-[10px] transition-colors ${
-                  isPreferred
-                    ? 'bg-[#1a1a1a] border border-l-0 border-[#333]'
-                    : 'hover:bg-[#1a1a1a]'
+                className={`flex items-center px-1 rounded-r text-[10px] transition-colors ${
+                  isPreferred ? 'border-l border-[#333]' : ''
                 }`}
                 style={{ color: cli.color }}
                 onClick={(e) => {

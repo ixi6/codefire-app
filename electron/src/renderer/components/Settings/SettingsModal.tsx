@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { X, Check, Settings, Terminal, Cpu, Mail, Globe, Newspaper, Users, Shield } from 'lucide-react'
+import { X, Check, Settings, Terminal, Cpu, Mail, Globe, Newspaper, Users, Shield, UserCircle } from 'lucide-react'
 import type { AppConfig } from '@shared/models'
 import { api } from '../../lib/api'
+import SettingsTabMe from './SettingsTabMe'
 import SettingsTabGeneral from './SettingsTabGeneral'
 import SettingsTabTerminal from './SettingsTabTerminal'
 import SettingsTabEngine from './SettingsTabEngine'
@@ -12,6 +13,7 @@ import SettingsTabTeam from './SettingsTabTeam'
 import SettingsTabAdmin from './SettingsTabAdmin'
 
 const BASE_TABS = [
+  { id: 'me', label: 'Me', icon: UserCircle },
   { id: 'general', label: 'General', icon: Settings },
   { id: 'team', label: 'Team', icon: Users },
   { id: 'terminal', label: 'Terminal', icon: Terminal },
@@ -32,14 +34,14 @@ interface SettingsModalProps {
 }
 
 export default function SettingsModal({ open, onClose, initialTab }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<TabId>(initialTab ?? 'general')
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab ?? 'me')
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [saved, setSaved] = useState(false)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
 
   useEffect(() => {
     if (open) {
-      setActiveTab(initialTab ?? 'general')
+      setActiveTab(initialTab ?? 'me')
       api.settings.get().then(setConfig).catch(() => {})
       api.premium.isSuperAdmin().then(setIsSuperAdmin).catch(() => setIsSuperAdmin(false))
       setSaved(false)
@@ -66,6 +68,8 @@ export default function SettingsModal({ open, onClose, initialTab }: SettingsMod
   function renderTab() {
     const props = { config: config!, onChange: handleChange }
     switch (activeTab) {
+      case 'me':
+        return <SettingsTabMe {...props} />
       case 'general':
         return <SettingsTabGeneral {...props} />
       case 'team':

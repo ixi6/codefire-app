@@ -19,6 +19,7 @@ import { ContextEngine } from './services/ContextEngine'
 import { EmbeddingClient } from './services/EmbeddingClient'
 import { BrowserCommandExecutor } from './services/BrowserCommandExecutor'
 import { LiveSessionWatcher } from './services/LiveSessionWatcher'
+import { AgentProcessWatcher } from './services/AgentProcessWatcher'
 import { SessionWatcher } from './services/SessionWatcher'
 import { FileWatcher } from './services/FileWatcher'
 import { ProjectDAO } from './database/dao/ProjectDAO'
@@ -64,6 +65,9 @@ MCPServerManager.syncMcpServerForLinux()
 // Initialize MCP server manager (polls for active MCP connections)
 const mcpManager = new MCPServerManager()
 
+// Initialize agent process watcher (detects running Claude Code agents)
+const agentWatcher = new AgentProcessWatcher()
+
 // Deferred services — initialized after window shows for faster startup
 let gmailService: GmailService | undefined
 let searchEngine: SearchEngine
@@ -107,6 +111,9 @@ function initDeferredServices() {
   // Browser command executor
   browserExecutor = new BrowserCommandExecutor(db)
   browserExecutor.start()
+
+  // Start agent process watcher
+  agentWatcher.start()
 
   // Live session watcher
   liveWatcher = new LiveSessionWatcher()
@@ -256,7 +263,7 @@ app.on('open-url', (event, url) => {
 })
 
 // Register essential IPC handlers immediately (db, window, terminal, git, MCP)
-registerAllHandlers(db, windowManager, terminalService, gitService, undefined, undefined, undefined, undefined, mcpManager, undefined)
+registerAllHandlers(db, windowManager, terminalService, gitService, undefined, undefined, undefined, undefined, mcpManager, undefined, agentWatcher)
 
 
 let isQuitting = false
@@ -436,6 +443,7 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  agentWatcher.stop()
   if (fileWatcher) fileWatcher.unwatchAll()
   if (liveWatcher) liveWatcher.stop()
   if (sessionWatcher) sessionWatcher.unwatchAll()

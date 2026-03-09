@@ -13,6 +13,10 @@ const SECRET_KEYS: (keyof AppConfig)[] = [
 ]
 
 export const APP_CONFIG_DEFAULTS: AppConfig = {
+  // Profile (Me)
+  profileName: '',
+  profileAvatarUrl: '',
+
   // General
   checkForUpdates: true,
   notifyOnNewEmail: true,

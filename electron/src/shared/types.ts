@@ -139,6 +139,8 @@ export type ContextChannel =
   | 'context:hasInstruction'
   | 'context:installMCP'
 
+export type AgentChannel = 'agent:getState'
+
 export type BrowserCommandChannel = 'browser:executeCommand'
 
 export type PremiumChannel =
@@ -256,6 +258,7 @@ export type IpcChannel =
   | ProjectDocChannel
   | PatternChannel
   | ContextChannel
+  | AgentChannel
 
 // ─── Electron API ────────────────────────────────────────────────────────────
 
