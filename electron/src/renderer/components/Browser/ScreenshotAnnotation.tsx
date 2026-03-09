@@ -158,21 +158,22 @@ export default function ScreenshotAnnotation({
         ctx.moveTo(ann.start.x, ann.start.y)
         ctx.lineTo(ann.end.x, ann.end.y)
         ctx.stroke()
-        // Draw arrowhead
+        // Draw filled arrowhead (matches Swift implementation)
         const angle = Math.atan2(ann.end.y - ann.start.y, ann.end.x - ann.start.x)
         const headLen = 16
+        const arrowAngle = Math.PI / 6
         ctx.beginPath()
         ctx.moveTo(ann.end.x, ann.end.y)
         ctx.lineTo(
-          ann.end.x - headLen * Math.cos(angle - Math.PI / 6),
-          ann.end.y - headLen * Math.sin(angle - Math.PI / 6)
+          ann.end.x - headLen * Math.cos(angle - arrowAngle),
+          ann.end.y - headLen * Math.sin(angle - arrowAngle)
         )
-        ctx.moveTo(ann.end.x, ann.end.y)
         ctx.lineTo(
-          ann.end.x - headLen * Math.cos(angle + Math.PI / 6),
-          ann.end.y - headLen * Math.sin(angle + Math.PI / 6)
+          ann.end.x - headLen * Math.cos(angle + arrowAngle),
+          ann.end.y - headLen * Math.sin(angle + arrowAngle)
         )
-        ctx.stroke()
+        ctx.closePath()
+        ctx.fill()
         break
       }
       case 'rect': {
