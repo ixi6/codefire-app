@@ -406,6 +406,8 @@ export const api = {
       invoke('git:stage', projectPath, files) as Promise<void>,
     unstage: (projectPath: string, files: string[]) =>
       invoke('git:unstage', projectPath, files) as Promise<void>,
+    discard: (projectPath: string, files: string[], untracked: boolean = false) =>
+      invoke('git:discard', projectPath, files, untracked) as Promise<void>,
     commit: (projectPath: string, message: string) =>
       invoke('git:commit', projectPath, message) as Promise<{ hash: string }>,
   },

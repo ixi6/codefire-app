@@ -13,6 +13,29 @@ export default function App() {
     return window.api.on('menu:openSettings', () => setShowSettings(true))
   }, [])
 
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const ctrl = e.ctrlKey || e.metaKey
+
+      // Ctrl+, → Open Settings
+      if (ctrl && e.key === ',') {
+        e.preventDefault()
+        setShowSettings(true)
+        return
+      }
+
+      // Ctrl+Shift+H → Show Planner (focus main window)
+      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault()
+        window.api.invoke('window:focusMain')
+        return
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
   return (
     <>
       {projectId ? <ProjectLayout projectId={projectId} /> : <MainLayout />}

@@ -6,9 +6,10 @@ import { SortControls, sortTasks, type SortOption } from '@renderer/components/K
 
 interface TasksViewProps {
   projectId: string
+  projectPath?: string
 }
 
-export default function TasksView({ projectId }: TasksViewProps) {
+export default function TasksView({ projectId, projectPath }: TasksViewProps) {
   const [sort, setSort] = useState<SortOption>({ field: 'recent', dir: 'desc' })
   const {
     todoTasks,
@@ -57,6 +58,7 @@ export default function TasksView({ projectId }: TasksViewProps) {
           onUpdateTask={updateTask}
           onDeleteTask={deleteTask}
           onAddTask={createTask}
+          projectPath={projectPath}
         />
       </div>
     </div>

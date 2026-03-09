@@ -23,6 +23,7 @@ export const APP_CONFIG_DEFAULTS: AppConfig = {
   notifyOnClaudeDone: true,
   demoMode: false,
   preferredCLI: 'claude',
+  cliExtraArgs: '',
 
   // Terminal
   terminalFontSize: 13,

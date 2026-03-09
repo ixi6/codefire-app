@@ -27,10 +27,10 @@ interface TaskDetailSheetProps {
 
 const PRIORITY_OPTIONS = [
   { value: 0, label: 'None', color: 'text-neutral-500', bg: 'bg-neutral-700', icon: Circle },
-  { value: 1, label: 'Low', color: 'text-blue-400', bg: 'bg-blue-500/20', icon: ArrowUp },
+  { value: 1, label: 'Low', color: 'text-neutral-400', bg: 'bg-neutral-500/20', icon: ArrowUp },
   { value: 2, label: 'Medium', color: 'text-yellow-400', bg: 'bg-yellow-500/20', icon: ArrowUpRight },
   { value: 3, label: 'High', color: 'text-orange-400', bg: 'bg-orange-500/20', icon: Flame },
-  { value: 4, label: 'Urgent', color: 'text-red-400', bg: 'bg-red-500/20', icon: AlertTriangle },
+  { value: 4, label: 'Critical', color: 'text-red-400', bg: 'bg-red-500/20', icon: AlertTriangle },
 ]
 
 const SOURCE_BADGES: Record<string, { label: string; color: string; bg: string }> = {

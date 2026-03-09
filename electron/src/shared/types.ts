@@ -54,6 +54,7 @@ export type GitChannel =
   | 'git:log'
   | 'git:stage'
   | 'git:unstage'
+  | 'git:discard'
   | 'git:commit'
 
 export type GitHubChannel =

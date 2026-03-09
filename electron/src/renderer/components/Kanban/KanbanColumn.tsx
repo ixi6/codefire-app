@@ -39,6 +39,9 @@ interface KanbanColumnProps {
   isDropTarget?: boolean
   onTaskClick: (task: TaskItem) => void
   onAddTask: (title: string) => void
+  onMoveTask?: (taskId: number, newStatus: string) => void
+  onLaunchSession?: (task: TaskItem) => void
+  onDeleteTask?: (taskId: number) => void
   projectNames?: Record<string, string>
 }
 
@@ -51,6 +54,9 @@ export default function KanbanColumn({
   isDropTarget,
   onTaskClick,
   onAddTask,
+  onMoveTask,
+  onLaunchSession,
+  onDeleteTask,
   projectNames,
 }: KanbanColumnProps) {
   const [newTitle, setNewTitle] = useState('')
@@ -130,6 +136,9 @@ export default function KanbanColumn({
               key={task.id}
               task={task}
               onClick={() => onTaskClick(task)}
+              onMoveTask={onMoveTask}
+              onLaunchSession={onLaunchSession}
+              onDeleteTask={onDeleteTask}
               projectName={projectNames?.[task.projectId]}
             />
           ))}

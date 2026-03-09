@@ -300,6 +300,7 @@ export interface AppConfig {
   notifyOnClaudeDone: boolean
   demoMode: boolean
   preferredCLI: 'claude' | 'gemini' | 'codex'
+  cliExtraArgs: string
 
   // Terminal
   terminalFontSize: number

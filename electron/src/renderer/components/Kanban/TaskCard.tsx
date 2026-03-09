@@ -1,6 +1,7 @@
+import { useState, useEffect, useRef } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { MessageSquare, GripVertical, Bot, User, Mail, Cpu, FolderOpen } from 'lucide-react'
+import { MessageSquare, GripVertical, Bot, User, Mail, Cpu, FolderOpen, Play, Trash2, ArrowRight } from 'lucide-react'
 import type { TaskItem } from '@shared/models'
 
 interface TaskCardProps {
@@ -9,11 +10,14 @@ interface TaskCardProps {
   noteCount?: number
   projectName?: string
   isDragOverlay?: boolean
+  onMoveTask?: (taskId: number, newStatus: string) => void
+  onLaunchSession?: (task: TaskItem) => void
+  onDeleteTask?: (taskId: number) => void
 }
 
 const PRIORITY_COLORS: Record<number, string> = {
   0: '',
-  1: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  1: 'bg-neutral-500/20 text-neutral-400 border-neutral-500/30',
   2: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
   3: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
   4: 'bg-red-500/20 text-red-400 border-red-500/30',
@@ -23,7 +27,7 @@ const PRIORITY_LABELS: Record<number, string> = {
   1: 'Low',
   2: 'Med',
   3: 'High',
-  4: 'Urgent',
+  4: 'Critical',
 }
 
 const SOURCE_BADGES: Record<string, { label: string; color: string; bg: string }> = {
@@ -66,7 +70,16 @@ function parseLabels(labels: string | null): string[] {
   }
 }
 
-export default function TaskCard({ task, onClick, noteCount = 0, projectName, isDragOverlay }: TaskCardProps) {
+const MOVE_TARGETS: { status: string; label: string }[] = [
+  { status: 'todo', label: 'Todo' },
+  { status: 'in_progress', label: 'In Progress' },
+  { status: 'done', label: 'Done' },
+]
+
+export default function TaskCard({ task, onClick, noteCount = 0, projectName, isDragOverlay, onMoveTask, onLaunchSession, onDeleteTask }: TaskCardProps) {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
   const {
     attributes,
     listeners,
@@ -86,6 +99,25 @@ export default function TaskCard({ task, onClick, noteCount = 0, projectName, is
 
   const labels = parseLabels(task.labels)
 
+  // Close context menu on click outside or scroll
+  useEffect(() => {
+    if (!contextMenu) return
+    const close = () => setContextMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [contextMenu])
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (isDragOverlay) return
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY })
+  }
+
   return (
     <div
       ref={setNodeRef}
@@ -94,6 +126,7 @@ export default function TaskCard({ task, onClick, noteCount = 0, projectName, is
         hover:border-neutral-600 hover:shadow-[0_2px_8px_rgba(0,0,0,0.15)] transition-all duration-150 cursor-pointer group
         ${isDragging ? 'shadow-lg ring-1 ring-codefire-orange/30' : ''}`}
       onClick={onClick}
+      onContextMenu={handleContextMenu}
     >
       <div className="flex items-start gap-1.5">
         {/* Drag handle */}
@@ -165,6 +198,52 @@ export default function TaskCard({ task, onClick, noteCount = 0, projectName, is
           </div>
         </div>
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          ref={menuRef}
+          className="fixed z-50 min-w-[180px] bg-neutral-800 border border-neutral-700 rounded-cf shadow-xl py-1"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {MOVE_TARGETS.filter((t) => t.status !== task.status).map((target) => (
+            <button
+              key={target.status}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-700 transition-colors"
+              onClick={() => {
+                onMoveTask?.(task.id, target.status)
+                setContextMenu(null)
+              }}
+            >
+              <ArrowRight size={13} className="text-neutral-500" />
+              Move to {target.label}
+            </button>
+          ))}
+          <div className="h-px bg-neutral-700 my-1" />
+          <button
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-700 transition-colors"
+            onClick={() => {
+              onLaunchSession?.(task)
+              setContextMenu(null)
+            }}
+          >
+            <Play size={13} className="text-codefire-orange" />
+            Launch as CLI Session
+          </button>
+          <div className="h-px bg-neutral-700 my-1" />
+          <button
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+            onClick={() => {
+              onDeleteTask?.(task.id)
+              setContextMenu(null)
+            }}
+          >
+            <Trash2 size={13} />
+            Delete
+          </button>
+        </div>
+      )}
     </div>
   )
 }

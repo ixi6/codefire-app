@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  Loader2, Play, RotateCcw, FolderOpen,
+  Loader2, Play, RotateCcw, FolderOpen, RefreshCw,
   Clock, CircleDotDashed, ArrowRightLeft,
   GitBranch, Cpu, MessageSquare, Wrench, DollarSign,
 } from 'lucide-react'
@@ -126,6 +126,19 @@ export default function DashboardView({ projectId, projectPath, onTabChange }: D
         >
           <FolderOpen size={12} />
           Open in Explorer
+        </button>
+        <button
+          onClick={async () => {
+            try {
+              await window.api.invoke('discovery:importSessions', projectId)
+            } catch {}
+          }}
+          className="flex items-center gap-2 px-4 py-2 rounded-cf
+                     bg-neutral-800 border border-neutral-700 text-neutral-300 text-xs font-medium
+                     hover:bg-neutral-700/50 hover:text-neutral-200 transition-colors"
+        >
+          <RefreshCw size={12} />
+          Rescan
         </button>
       </div>
 

@@ -33,6 +33,8 @@ interface KanbanBoardProps {
   onAddTask: (title: string, status?: string) => Promise<unknown>
   /** Map of projectId → projectName, for showing project badge on task cards in global view */
   projectNames?: Record<string, string>
+  /** Project path for launching CLI sessions */
+  projectPath?: string
 }
 
 const COLUMNS = [
@@ -51,6 +53,7 @@ export default function KanbanBoard({
   onDeleteTask,
   onAddTask,
   projectNames,
+  projectPath,
 }: KanbanBoardProps) {
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null)
   const [activeTask, setActiveTask] = useState<TaskItem | null>(null)
@@ -170,6 +173,39 @@ export default function KanbanBoard({
     setOverColumnId(null)
   }
 
+  const handleMoveTask = useCallback((taskId: number, newStatus: string) => {
+    onUpdateTask(taskId, { status: newStatus })
+  }, [onUpdateTask])
+
+  const handleLaunchSession = useCallback(async (task: TaskItem) => {
+    try {
+      const config = await window.api.invoke('settings:get') as { preferredCLI?: string; cliExtraArgs?: string }
+      const cli = config?.preferredCLI ?? 'claude'
+      const extraArgs = config?.cliExtraArgs ?? ''
+      let prompt = task.title
+      if (task.description) prompt += '\n\n' + task.description
+      const escaped = prompt
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/\$/g, '\\$')
+        .replace(/`/g, '\\`')
+        .replace(/\n/g, '\\n')
+      const command = extraArgs ? `${cli} ${extraArgs} "${escaped}"` : `${cli} "${escaped}"`
+      const termId = `task-${task.id}-${Date.now()}`
+      const path = projectPath || ''
+      await window.api.invoke('terminal:create', termId, path)
+      setTimeout(() => {
+        window.api.send('terminal:write', termId, command + '\n')
+      }, 300)
+    } catch (err) {
+      console.error('Failed to launch CLI session:', err)
+    }
+  }, [projectPath])
+
+  const handleDeleteTask = useCallback((taskId: number) => {
+    onDeleteTask(taskId)
+  }, [onDeleteTask])
+
   return (
     <DndContext
       sensors={sensors}
@@ -192,6 +228,9 @@ export default function KanbanBoard({
               isDropTarget={overColumnId === col.id}
               onTaskClick={(task) => setSelectedTask(task)}
               onAddTask={(title) => onAddTask(title, col.id)}
+              onMoveTask={handleMoveTask}
+              onLaunchSession={handleLaunchSession}
+              onDeleteTask={handleDeleteTask}
               projectNames={projectNames}
             />
           ))}

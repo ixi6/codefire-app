@@ -22,7 +22,7 @@ import NotesView from '@renderer/views/NotesView'
 const SessionsView = lazy(() => import('@renderer/views/SessionsView'))
 const FilesView = lazy(() => import('@renderer/views/FilesView'))
 const MemoryView = lazy(() => import('@renderer/views/MemoryView'))
-const PatternsView = lazy(() => import('@renderer/views/PatternsView'))
+
 const ServicesView = lazy(() => import('@renderer/views/ServicesView'))
 const RulesView = lazy(() => import('@renderer/views/RulesView'))
 const GitView = lazy(() => import('@renderer/views/GitView'))
@@ -147,7 +147,7 @@ export default function ProjectLayout({ projectId }: ProjectLayoutProps) {
     // Eager-loaded views (default tab + lightweight — work with just projectId)
     switch (tab) {
       case 'Tasks':
-        return <TasksView projectId={pid} />
+        return <TasksView projectId={pid} projectPath={projectPath} />
       case 'Dashboard':
         return <DashboardView projectId={pid} projectPath={projectPath} onTabChange={onTabChange} />
       case 'Notes':
@@ -163,7 +163,7 @@ export default function ProjectLayout({ projectId }: ProjectLayoutProps) {
         {tab === 'Sessions' && <SessionsView projectId={pid} />}
         {tab === 'Files' && <FilesView projectId={pid} projectPath={projectPath} />}
         {tab === 'Memory' && <MemoryView projectId={pid} projectPath={projectPath} />}
-        {tab === 'Patterns' && <PatternsView projectId={pid} />}
+
         {tab === 'Services' && <ServicesView projectId={pid} projectPath={projectPath} />}
         {tab === 'Rules' && <RulesView projectId={pid} projectPath={projectPath} />}
         {tab === 'Git' && <GitView projectId={pid} projectPath={projectPath} />}
@@ -174,7 +174,7 @@ export default function ProjectLayout({ projectId }: ProjectLayoutProps) {
         {tab === 'Activity' && <ActivityView projectId={pid} />}
         {tab === 'Docs' && <DocsView projectId={pid} />}
         {tab === 'Reviews' && <ReviewsView projectId={pid} />}
-        {!['Sessions','Files','Memory','Patterns','Services','Rules','Git','Images','Transcribe','Browser','Visualize','Activity','Docs','Reviews'].includes(tab) && (
+        {!['Sessions','Files','Memory','Services','Rules','Git','Images','Transcribe','Browser','Visualize','Activity','Docs','Reviews'].includes(tab) && (
           <div className="flex-1 p-4 overflow-y-auto">
             <h2 className="text-title text-neutral-300">{tab}</h2>
             <p className="text-sm text-neutral-600 mt-1">Coming soon</p>
