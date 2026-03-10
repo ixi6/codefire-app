@@ -13,6 +13,7 @@ export default function RecordingsView({ projectId }: RecordingsViewProps) {
   const [recordings, setRecordings] = useState<Recording[]>([])
   const [selected, setSelected] = useState<Recording | null>(null)
   const [isTranscribing, setIsTranscribing] = useState(false)
+  const [hasOpenAiKey, setHasOpenAiKey] = useState(false)
 
   useEffect(() => {
     api.recordings.list(projectId).then((recs) => {
@@ -21,11 +22,20 @@ export default function RecordingsView({ projectId }: RecordingsViewProps) {
     })
   }, [projectId])
 
+  // Check for OpenAI key on mount and periodically when window regains focus
+  useEffect(() => {
+    async function checkKey() {
+      const config = await window.api.invoke('settings:get') as { openAiKey?: string } | undefined
+      setHasOpenAiKey(!!config?.openAiKey)
+    }
+    checkKey()
+    window.addEventListener('focus', checkKey)
+    return () => window.removeEventListener('focus', checkKey)
+  }, [])
+
   async function getOpenAiKey(): Promise<string | null> {
-    // Try settings first, fall back to localStorage
     const config = await window.api.invoke('settings:get') as { openAiKey?: string } | undefined
-    if (config?.openAiKey) return config.openAiKey
-    return localStorage.getItem('openai_api_key')
+    return config?.openAiKey || null
   }
 
   async function autoTranscribeIfEnabled(id: string) {
@@ -68,12 +78,7 @@ export default function RecordingsView({ projectId }: RecordingsViewProps) {
 
   async function handleTranscribe(id: string, providedKey?: string) {
     const apiKey = providedKey || await getOpenAiKey()
-    if (!apiKey) {
-      const key = window.prompt('Enter your OpenAI API key for Whisper transcription:')
-      if (!key) return
-      localStorage.setItem('openai_api_key', key)
-      return handleTranscribe(id, key)
-    }
+    if (!apiKey) return
 
     setIsTranscribing(true)
     try {
@@ -126,6 +131,7 @@ export default function RecordingsView({ projectId }: RecordingsViewProps) {
             onTranscribe={handleTranscribe}
             isTranscribing={isTranscribing}
             projectId={projectId}
+            hasOpenAiKey={hasOpenAiKey}
           />
         </div>
       </div>
