@@ -9,7 +9,6 @@ const ALLOWED_SEND_CHANNELS = new Set<string>([
   'terminal:write',
   'terminal:writeToActive',
   'terminal:resize',
-  'terminal:ready',
 ])
 
 /** Prefixes allowed for dynamic send channels (e.g., browser:commandResult:123) */

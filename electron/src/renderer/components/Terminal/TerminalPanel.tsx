@@ -21,6 +21,7 @@ interface TerminalPanelProps {
 interface TabInfo {
   id: string
   label: string
+  initialCommand?: string
 }
 
 let tabCounter = 0
@@ -51,15 +52,11 @@ export default function TerminalPanel({ projectId, projectPath, showChat, onTogg
   const [terminalAvailable, setTerminalAvailable] = useState<boolean | null>(null)
 
   // ─── Create a new terminal tab ──────────────────────────────────────────
-  const addTab = useCallback(async () => {
+  const addTab = useCallback(() => {
     const id = createTabId(projectId)
-
-    // Tell main process to create the PTY
-    await window.api.invoke('terminal:create', id, projectPath)
-
     setTabs((prev) => [...prev, { id, label: `Terminal ${prev.length + 1}` }])
     setActiveTabId(id)
-  }, [projectId, projectPath])
+  }, [projectId])
 
   // ─── Close a terminal tab ──────────────────────────────────────────────
   const closeTab = useCallback(
@@ -83,16 +80,11 @@ export default function TerminalPanel({ projectId, projectPath, showChat, onTogg
   )
 
   // ─── Launch a CLI tool in a new terminal tab ──────────────────────────────
-  const launchCLI = useCallback(async (label: string, command: string) => {
+  const launchCLI = useCallback((label: string, command: string) => {
     const id = createTabId(projectId)
-    await window.api.invoke('terminal:create', id, projectPath)
-    setTabs((prev) => [...prev, { id, label }])
+    setTabs((prev) => [...prev, { id, label, initialCommand: command }])
     setActiveTabId(id)
-    // Brief delay to let the shell initialize, then write the command
-    setTimeout(() => {
-      window.api.send('terminal:write', id, command + '\n')
-    }, 300)
-  }, [projectId, projectPath])
+  }, [projectId])
 
   // ─── Check availability and create first tab on mount ────────────────────
   useEffect(() => {
@@ -259,6 +251,8 @@ export default function TerminalPanel({ projectId, projectPath, showChat, onTogg
             key={tab.id}
             terminalId={tab.id}
             isActive={tab.id === activeTabId}
+            projectPath={projectPath}
+            initialCommand={tab.initialCommand}
           />
         ))}
       </div>

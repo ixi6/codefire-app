@@ -9,6 +9,10 @@ interface TerminalTabProps {
   terminalId: string
   /** Whether this tab is currently visible */
   isActive: boolean
+  /** Filesystem path for the project, used as the shell's cwd */
+  projectPath: string
+  /** Optional command to run after the shell starts */
+  initialCommand?: string
 }
 
 /**
@@ -59,7 +63,7 @@ async function pasteWithImageFallback(termId: string) {
   }
 }
 
-export default function TerminalTab({ terminalId, isActive }: TerminalTabProps) {
+export default function TerminalTab({ terminalId, isActive, projectPath, initialCommand }: TerminalTabProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -164,8 +168,19 @@ export default function TerminalTab({ terminalId, isActive }: TerminalTabProps) 
       }
     )
 
-    // Signal main process that xterm.js listener is mounted — flush buffered output
-    window.api.send('terminal:ready', terminalId)
+    // ─── Create PTY AFTER listener is registered (eliminates race condition) ─
+    window.api.invoke('terminal:create', terminalId, projectPath)
+      .then(() => {
+        if (initialCommand) {
+          setTimeout(() => {
+            window.api.send('terminal:write', terminalId, initialCommand + '\n')
+          }, 300)
+        }
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err)
+        terminal.write(`\r\n\x1b[31mFailed to create terminal: ${msg}\x1b[0m\r\n`)
+      })
 
     // ─── PTY exit ─────────────────────────────────────────────────────────
     const removeExitListener = window.api.on(
