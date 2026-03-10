@@ -469,6 +469,7 @@ export default function TaskDetailSheet({
                   handleAddLabel()
                 }
               }}
+              onBlur={handleAddLabel}
             />
           </div>
         </div>
