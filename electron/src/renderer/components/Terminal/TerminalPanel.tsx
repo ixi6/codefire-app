@@ -253,7 +253,7 @@ export default function TerminalPanel({ projectId, projectPath, showChat, onTogg
       </div>
 
       {/* ─── Terminal Content ──────────────────────────────────────────────── */}
-      <div className="flex-1 min-h-0 relative">
+      <div className="flex-1 min-h-0 relative overflow-hidden">
         {tabs.map((tab) => (
           <TerminalTab
             key={tab.id}

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { Plus, Circle, CircleDot, CheckCircle2 } from 'lucide-react'
+import { Plus, Expand, Circle, CircleDot, CheckCircle2 } from 'lucide-react'
 import type { TaskItem } from '@shared/models'
 import TaskCard from './TaskCard'
 
@@ -39,6 +39,7 @@ interface KanbanColumnProps {
   isDropTarget?: boolean
   onTaskClick: (task: TaskItem) => void
   onAddTask: (title: string) => void
+  onOpenCreateModal?: () => void
   onMoveTask?: (taskId: number, newStatus: string) => void
   onLaunchSession?: (task: TaskItem) => void
   onDeleteTask?: (taskId: number) => void
@@ -54,6 +55,7 @@ export default function KanbanColumn({
   isDropTarget,
   onTaskClick,
   onAddTask,
+  onOpenCreateModal,
   onMoveTask,
   onLaunchSession,
   onDeleteTask,
@@ -90,9 +92,19 @@ export default function KanbanColumn({
           })()}
           <span className="text-sm text-neutral-300 font-medium">{title}</span>
           <span className="text-xs text-neutral-500 ml-auto">{tasks.length}</span>
+          {onOpenCreateModal && (
+            <button
+              className="text-neutral-500 hover:text-codefire-orange transition-colors"
+              onClick={onOpenCreateModal}
+              title="New task (full form)"
+            >
+              <Expand size={12} />
+            </button>
+          )}
           <button
             className="text-neutral-500 hover:text-codefire-orange transition-colors"
             onClick={() => setShowInput(true)}
+            title="Quick add"
           >
             <Plus size={14} />
           </button>

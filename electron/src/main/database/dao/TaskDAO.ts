@@ -75,7 +75,7 @@ export class TaskDAO {
         data.title,
         data.description ?? null,
         Math.min(4, Math.max(0, data.priority ?? 0)),
-        data.source ?? 'claude',
+        data.source ?? 'manual',
         data.labels ? JSON.stringify(data.labels) : null,
         data.isGlobal ? 1 : 0,
         now

@@ -263,7 +263,7 @@ export default function TerminalTab({ terminalId, isActive }: TerminalTabProps) 
       <div
         ref={containerRef}
         className="h-full w-full"
-        style={{ backgroundColor: '#171717' }}
+        style={{ backgroundColor: '#171717', padding: '8px 4px 4px 8px' }}
       />
       {dragOver && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/40 border-2 border-dashed border-codefire-orange/60 rounded pointer-events-none z-10">

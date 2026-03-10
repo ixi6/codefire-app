@@ -13,6 +13,7 @@ import {
 import type { TaskItem } from '@shared/models'
 import KanbanColumn from './KanbanColumn'
 import TaskDetailSheet from './TaskDetailSheet'
+import TaskCreateModal from './TaskCreateModal'
 import TaskCard from './TaskCard'
 
 interface KanbanBoardProps {
@@ -58,6 +59,7 @@ export default function KanbanBoard({
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null)
   const [activeTask, setActiveTask] = useState<TaskItem | null>(null)
   const [overColumnId, setOverColumnId] = useState<string | null>(null)
+  const [createModalStatus, setCreateModalStatus] = useState<string | null>(null)
 
   // Local optimistic state: null means "use props", otherwise use this override
   const [optimisticTasks, setOptimisticTasks] = useState<Record<string, TaskItem[]> | null>(null)
@@ -228,6 +230,7 @@ export default function KanbanBoard({
               isDropTarget={overColumnId === col.id}
               onTaskClick={(task) => setSelectedTask(task)}
               onAddTask={(title) => onAddTask(title, col.id)}
+              onOpenCreateModal={() => setCreateModalStatus(col.id)}
               onMoveTask={handleMoveTask}
               onLaunchSession={handleLaunchSession}
               onDeleteTask={handleDeleteTask}
@@ -235,6 +238,22 @@ export default function KanbanBoard({
             />
           ))}
         </div>
+
+        <TaskCreateModal
+          open={createModalStatus !== null}
+          onClose={() => setCreateModalStatus(null)}
+          defaultStatus={createModalStatus ?? 'todo'}
+          onCreate={async (data) => {
+            const task = await onAddTask(data.title, data.status) as TaskItem | undefined
+            if (task && (data.priority || data.labels.length || data.description)) {
+              await onUpdateTask(task.id, {
+                ...(data.description ? { description: data.description } : {}),
+                ...(data.priority ? { priority: data.priority } : {}),
+                ...(data.labels.length ? { labels: data.labels } : {}),
+              })
+            }
+          }}
+        />
 
         {selectedTask && (
           <TaskDetailSheet

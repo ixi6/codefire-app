@@ -1,18 +1,32 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
-import { Terminal } from 'lucide-react'
+import { Terminal, FolderOpen } from 'lucide-react'
 import logoIcon from '../../../resources/icon.png'
 import { api } from '@renderer/lib/api'
 import TerminalPanel from '@renderer/components/Terminal/TerminalPanel'
 import CodeFireChat from '@renderer/components/Chat/CodeFireChat'
 import ProjectDropdown from '@renderer/components/Header/ProjectDropdown'
 import MCPIndicator from '@renderer/components/StatusBar/MCPIndicator'
+import TabBar from '@renderer/components/TabBar/TabBar'
 import AllProjectsView from '@renderer/views/AllProjectsView'
+import NotesView from '@renderer/views/NotesView'
+import DashboardView from '@renderer/views/DashboardView'
 import { useMCPStatus } from '@renderer/hooks/useMCPStatus'
 import { useAgentMonitor } from '@renderer/hooks/useAgentMonitor'
 import { AlertTriangle } from 'lucide-react'
 import NotificationBell from '@renderer/components/NotificationBell'
 import { UpdateBanner } from '@renderer/components/UpdateBanner'
+
+const SessionsView = lazy(() => import('@renderer/views/SessionsView'))
+const ImagesView = lazy(() => import('@renderer/views/ImagesView'))
+const ActivityView = lazy(() => import('@renderer/views/ActivityView'))
+const DocsView = lazy(() => import('@renderer/views/DocsView'))
+const BrowserView = lazy(() => import('@renderer/views/BrowserView'))
+const RecordingsView = lazy(() => import('@renderer/views/RecordingsView'))
+const ReviewsView = lazy(() => import('@renderer/views/ReviewsView'))
+
+/** Tabs that require a project path and can't run in global context */
+const PROJECT_ONLY_TABS = new Set(['Files', 'Memory', 'Rules', 'Git', 'Services', 'Visualize'])
 
 const isMac = navigator.platform.toUpperCase().includes('MAC')
 
@@ -25,6 +39,7 @@ export default function MainLayout() {
   const [terminalOnLeft, setTerminalOnLeft] = useState(false)
   const [showChat, setShowChat] = useState(true)
   const [dragOverSide, setDragOverSide] = useState<'left' | 'right' | 'active' | null>(null)
+  const [activeTab, setActiveTab] = useState('Tasks')
 
   useEffect(() => {
     document.title = 'CodeFire'
@@ -63,6 +78,48 @@ export default function MainLayout() {
     )
   }
 
+  const lazyFallback = (
+    <div className="flex-1 flex items-center justify-center">
+      <div className="w-5 h-5 border-2 border-neutral-700 border-t-codefire-orange rounded-full animate-spin" />
+    </div>
+  )
+
+  function renderActiveView() {
+    // Project-only tabs show a placeholder in the global context
+    if (PROJECT_ONLY_TABS.has(activeTab)) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-neutral-500">
+          <FolderOpen size={28} className="text-neutral-600" />
+          <p className="text-sm font-medium text-neutral-400">Open a project to use {activeTab}</p>
+          <p className="text-xs text-neutral-600">This feature requires a project context</p>
+        </div>
+      )
+    }
+
+    // Eager-loaded views
+    switch (activeTab) {
+      case 'Tasks':
+        return <AllProjectsView />
+      case 'Dashboard':
+        return <DashboardView projectId="__global__" onTabChange={setActiveTab} />
+      case 'Notes':
+        return <NotesView projectId="__global__" />
+    }
+
+    // Lazy-loaded views
+    return (
+      <Suspense fallback={lazyFallback}>
+        {activeTab === 'Sessions' && <SessionsView projectId="__global__" />}
+        {activeTab === 'Activity' && <ActivityView projectId="__global__" />}
+        {activeTab === 'Images' && <ImagesView projectId="__global__" />}
+        {activeTab === 'Transcribe' && <RecordingsView projectId="__global__" />}
+        {activeTab === 'Browser' && <BrowserView projectId="__global__" />}
+        {activeTab === 'Docs' && <DocsView projectId="__global__" />}
+        {activeTab === 'Reviews' && <ReviewsView projectId="__global__" />}
+      </Suspense>
+    )
+  }
+
   return (
     <div className="h-screen w-screen overflow-hidden bg-neutral-900">
       {isMac && <div className="drag-region h-7 flex-shrink-0" />}
@@ -95,6 +152,9 @@ export default function MainLayout() {
 
         <UpdateBanner />
 
+        {/* Tab bar — same component as ProjectLayout */}
+        <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
+
         {/* Main content area: dashboard + terminal/chat columns (swappable via drag) */}
         <div
           className="flex-1 overflow-hidden relative"
@@ -120,13 +180,13 @@ export default function MainLayout() {
                   </Panel>
                   <Separator className="w-[2px] bg-neutral-800 hover:bg-codefire-orange active:bg-codefire-orange transition-colors duration-150" />
                   <Panel id="content" defaultSize="60%" minSize="30%">
-                    <AllProjectsView />
+                    {renderActiveView()}
                   </Panel>
                 </>
               ) : (
                 <>
                   <Panel id="content" defaultSize="60%" minSize="30%">
-                    <AllProjectsView />
+                    {renderActiveView()}
                   </Panel>
                   <Separator className="w-[2px] bg-neutral-800 hover:bg-codefire-orange active:bg-codefire-orange transition-colors duration-150" />
                   <Panel id="terminal-chat" defaultSize="40%" minSize="20%">
@@ -136,7 +196,9 @@ export default function MainLayout() {
               )}
             </Group>
           ) : (
-            <AllProjectsView />
+            <div className="h-full overflow-hidden flex flex-col">
+              {renderActiveView()}
+            </div>
           )}
 
           {/* Drop zones for dragging terminal left/right */}

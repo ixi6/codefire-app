@@ -13,14 +13,14 @@ import SettingsTabTeam from './SettingsTabTeam'
 import SettingsTabAdmin from './SettingsTabAdmin'
 
 const BASE_TABS = [
-  { id: 'me', label: 'Me', icon: UserCircle },
   { id: 'general', label: 'General', icon: Settings },
-  { id: 'team', label: 'Team', icon: Users },
   { id: 'terminal', label: 'Terminal', icon: Terminal },
   { id: 'engine', label: 'Engine', icon: Cpu },
   { id: 'gmail', label: 'Gmail', icon: Mail },
   { id: 'browser', label: 'Browser', icon: Globe },
   { id: 'briefing', label: 'Briefing', icon: Newspaper },
+  { id: 'me', label: 'Me', icon: UserCircle },
+  { id: 'team', label: 'Team', icon: Users },
 ] as const
 
 const ADMIN_TAB = { id: 'admin' as const, label: 'Admin', icon: Shield }
@@ -34,14 +34,14 @@ interface SettingsModalProps {
 }
 
 export default function SettingsModal({ open, onClose, initialTab }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<TabId>(initialTab ?? 'me')
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab ?? 'general')
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [saved, setSaved] = useState(false)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
 
   useEffect(() => {
     if (open) {
-      setActiveTab(initialTab ?? 'me')
+      setActiveTab(initialTab ?? 'general')
       api.settings.get().then(setConfig).catch(() => {})
       api.premium.isSuperAdmin().then(setIsSuperAdmin).catch(() => setIsSuperAdmin(false))
       setSaved(false)
