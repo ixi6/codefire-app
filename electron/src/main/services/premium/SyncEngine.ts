@@ -372,18 +372,11 @@ export class SyncEngine {
           }
           // else: local wins, will be pushed next cycle
         } else {
-          // No conflict, but still check timestamps — remote may be stale
-          const localTask = this.db.prepare(
-            `SELECT updatedAt, createdAt FROM taskItems WHERE id = ?`
-          ).get(Number(existing.localId)) as { updatedAt: string | null; createdAt: string } | undefined
-
-          const localUpdated = localTask?.updatedAt || localTask?.createdAt || '1970-01-01'
-          const remoteUpdated = remote.updated_at || '1970-01-01'
-
-          if (remoteUpdated > localUpdated) {
-            this.applyRemoteTask(remote, Number(existing.localId))
-          }
-          // else: local is same or newer, skip remote — will be pushed next cycle if dirty
+          // Not dirty — always apply remote data. The local task hasn't been
+          // modified, so the remote is the source of truth. We apply even when
+          // timestamps are equal because field values may have changed without
+          // an updated_at bump (e.g. description added after initial push).
+          this.applyRemoteTask(remote, Number(existing.localId))
 
           // Must reset dirty = 0 because applyRemoteTask triggers sync_task_dirty_update
           // which sets dirty = 1 via INSERT OR REPLACE
