@@ -1,5 +1,6 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, session } from 'electron'
 import { randomBytes } from 'crypto'
+import * as fs from 'fs'
 import path from 'path'
 import { getDatabase, closeDatabase } from './database/connection'
 import { initPathValidator } from './services/PathValidator'
@@ -78,7 +79,6 @@ let browserExecutor: BrowserCommandExecutor | null = null
 /** Session token for browser command auth — shared between IPC handlers, executor, and MCP server */
 const browserSessionToken = randomBytes(32).toString('hex')
 // Write token to app data so MCP server can read it
-import * as fs from 'fs'
 const tokenPath = path.join(app.getPath('userData'), '.browser-session-token')
 try { fs.writeFileSync(tokenPath, browserSessionToken, { mode: 0o600 }) } catch { /* ignore */ }
 let liveWatcher: LiveSessionWatcher
