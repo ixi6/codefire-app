@@ -110,13 +110,13 @@ export default function GitHubSection({ projectPath }: GitHubSectionProps) {
                   </span>
                 )}
                 {pr.reviewDecision === 'APPROVED' && (
-                  <ShieldCheck size={12} className="text-green-400 shrink-0" title="Approved" />
+                  <span title="Approved"><ShieldCheck size={12} className="text-green-400 shrink-0" /></span>
                 )}
                 {pr.reviewDecision === 'CHANGES_REQUESTED' && (
-                  <ShieldAlert size={12} className="text-orange-400 shrink-0" title="Changes requested" />
+                  <span title="Changes requested"><ShieldAlert size={12} className="text-orange-400 shrink-0" /></span>
                 )}
                 {pr.reviewDecision === 'REVIEW_REQUIRED' && (
-                  <MessageCircle size={12} className="text-neutral-500 shrink-0" title="Review required" />
+                  <span title="Review required"><MessageCircle size={12} className="text-neutral-500 shrink-0" /></span>
                 )}
                 {(pr.draft || pr.isDraft) && (
                   <span className="text-[10px] bg-neutral-800 text-neutral-500 rounded px-1.5 py-0.5 leading-none">
