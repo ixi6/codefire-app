@@ -18,10 +18,15 @@ function cleanSummaryText(raw: string): string {
  *
  * Fallback chain:
  * 1. Topic from summary (first user message, before " | Files:")
- * 2. Git branch name (formatted)
- * 3. Slug or truncated session ID
+ * 2. GitHub PR title (if a PR exists for the session's branch)
+ * 3. Git branch name (formatted)
+ * 4. Slug or truncated session ID
  */
-export function getSessionDisplayName(session: Session, maxLength = 60): string {
+export function getSessionDisplayName(
+  session: Session,
+  maxLength = 60,
+  prTitle?: string
+): string {
   // 1. Try to extract topic from summary (the first user message)
   if (session.summary) {
     const pipeIdx = session.summary.indexOf(' | Files:')
@@ -32,11 +37,16 @@ export function getSessionDisplayName(session: Session, maxLength = 60): string 
     }
   }
 
-  // 2. Use git branch as a hint
+  // 2. Use GitHub PR title if available for this branch
+  if (prTitle) {
+    return prTitle.length > maxLength ? prTitle.slice(0, maxLength - 1) + '…' : prTitle
+  }
+
+  // 3. Use git branch as a hint
   if (session.gitBranch) {
     return session.gitBranch
   }
 
-  // 3. Fall back to slug or truncated ID
+  // 4. Fall back to slug or truncated ID
   return session.slug || session.id.slice(0, 8)
 }

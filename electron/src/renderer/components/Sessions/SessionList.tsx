@@ -12,6 +12,7 @@ interface SessionListProps {
   sessions: Session[]
   selectedId: string | null
   onSelect: (session: Session) => void
+  prTitleMap?: Map<string, string>
 }
 
 interface DateGroup {
@@ -44,7 +45,7 @@ function groupByDate(sessions: Session[]): DateGroup[] {
   return Array.from(groups.entries()).map(([label, sessions]) => ({ label, sessions }))
 }
 
-export default function SessionList({ sessions, selectedId, onSelect }: SessionListProps) {
+export default function SessionList({ sessions, selectedId, onSelect, prTitleMap }: SessionListProps) {
   const dateGroups = useMemo(() => groupByDate(sessions), [sessions])
 
   if (sessions.length === 0) {
@@ -79,7 +80,11 @@ export default function SessionList({ sessions, selectedId, onSelect }: SessionL
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-neutral-200 truncate">
-                    {getSessionDisplayName(session)}
+                    {getSessionDisplayName(
+                      session,
+                      60,
+                      session.gitBranch ? prTitleMap?.get(session.gitBranch) : undefined
+                    )}
                   </span>
                   <CostBadge cost={cost} />
                 </div>
