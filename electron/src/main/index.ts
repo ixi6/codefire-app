@@ -26,6 +26,7 @@ import { AgentProcessWatcher } from './services/AgentProcessWatcher'
 import { SessionWatcher } from './services/SessionWatcher'
 import { FileWatcher } from './services/FileWatcher'
 import { ProjectDAO } from './database/dao/ProjectDAO'
+import { IndexDAO } from './database/dao/IndexDAO'
 import { AuthService } from './services/premium/AuthService'
 import { TeamService } from './services/premium/TeamService'
 import { SyncEngine } from './services/premium/SyncEngine'
@@ -125,6 +126,22 @@ function initDeferredServices() {
   // Browser command executor
   browserExecutor = new BrowserCommandExecutor(db, browserSessionToken)
   browserExecutor.start()
+
+  // Background index request processor — polls for indexRequests queued by MCP context_search
+  const indexDAO = new IndexDAO(db)
+  setInterval(async () => {
+    try {
+      const req = indexDAO.getPendingRequest()
+      if (!req) return
+      console.log(`[IndexProcessor] Processing index request for project ${req.projectId}`)
+      indexDAO.markProcessing(req.id)
+      await contextEngine.indexProject(req.projectId, req.projectPath)
+      indexDAO.markCompleted(req.id)
+      console.log(`[IndexProcessor] Completed indexing for project ${req.projectId}`)
+    } catch (err) {
+      console.error('[IndexProcessor] Index request failed:', err)
+    }
+  }, 5000)
 
   // Start agent process watcher
   agentWatcher.start()

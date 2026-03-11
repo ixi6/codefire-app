@@ -157,23 +157,34 @@ server.registerTool(
   'list_tasks',
   {
     title: 'List Tasks',
-    description: 'List tasks for a project or globally. Filter by status (todo, in_progress, done).',
+    description: 'List tasks for a project or globally. Filter by status, date range, or both.',
     inputSchema: z.object({
       projectId: z.string().optional().describe('Project ID. If omitted, lists global tasks.'),
       status: z.enum(['todo', 'in_progress', 'done']).optional().describe('Filter by task status'),
+      createdAfter: z.string().optional().describe('ISO 8601 datetime — only tasks created after this time'),
+      createdBefore: z.string().optional().describe('ISO 8601 datetime — only tasks created before this time'),
+      updatedAfter: z.string().optional().describe('ISO 8601 datetime — only tasks updated after this time'),
+      updatedBefore: z.string().optional().describe('ISO 8601 datetime — only tasks updated before this time'),
     }),
   },
-  async ({ projectId, status }) => {
-    let rows
+  async ({ projectId, status, createdAfter, createdBefore, updatedAfter, updatedBefore }) => {
+    const conditions: string[] = []
+    const params: unknown[] = []
+
     if (projectId) {
-      rows = status
-        ? db.prepare('SELECT * FROM taskItems WHERE projectId = ? AND status = ? ORDER BY priority DESC, createdAt DESC').all(projectId, status)
-        : db.prepare('SELECT * FROM taskItems WHERE projectId = ? ORDER BY priority DESC, createdAt DESC').all(projectId)
+      conditions.push('projectId = ?')
+      params.push(projectId)
     } else {
-      rows = status
-        ? db.prepare('SELECT * FROM taskItems WHERE isGlobal = 1 AND status = ? ORDER BY priority DESC, createdAt DESC').all(status)
-        : db.prepare('SELECT * FROM taskItems WHERE isGlobal = 1 ORDER BY priority DESC, createdAt DESC').all()
+      conditions.push('isGlobal = 1')
     }
+    if (status) { conditions.push('status = ?'); params.push(status) }
+    if (createdAfter) { conditions.push('createdAt >= ?'); params.push(createdAfter) }
+    if (createdBefore) { conditions.push('createdAt <= ?'); params.push(createdBefore) }
+    if (updatedAfter) { conditions.push('updatedAt >= ?'); params.push(updatedAfter) }
+    if (updatedBefore) { conditions.push('updatedAt <= ?'); params.push(updatedBefore) }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+    const rows = db.prepare(`SELECT * FROM taskItems ${where} ORDER BY priority DESC, createdAt DESC`).all(...params)
     return { content: [{ type: 'text' as const, text: JSON.stringify(rows, null, 2) }] }
   }
 )
@@ -280,13 +291,22 @@ server.registerTool(
   'list_task_notes',
   {
     title: 'List Task Notes',
-    description: 'Get all notes for a specific task',
+    description: 'Get all notes for a specific task. Supports date-range filtering.',
     inputSchema: z.object({
       taskId: z.number().describe('Task ID'),
+      createdAfter: z.string().optional().describe('ISO 8601 datetime — only notes created after this time'),
+      createdBefore: z.string().optional().describe('ISO 8601 datetime — only notes created before this time'),
     }),
   },
-  async ({ taskId }) => {
-    const notes = db.prepare('SELECT * FROM taskNotes WHERE taskId = ? ORDER BY createdAt ASC').all(taskId)
+  async ({ taskId, createdAfter, createdBefore }) => {
+    const conditions = ['taskId = ?']
+    const params: unknown[] = [taskId]
+
+    if (createdAfter) { conditions.push('createdAt >= ?'); params.push(createdAfter) }
+    if (createdBefore) { conditions.push('createdAt <= ?'); params.push(createdBefore) }
+
+    const where = `WHERE ${conditions.join(' AND ')}`
+    const notes = db.prepare(`SELECT * FROM taskNotes ${where} ORDER BY createdAt ASC`).all(...params)
     return { content: [{ type: 'text' as const, text: JSON.stringify(notes, null, 2) }] }
   }
 )
@@ -317,15 +337,34 @@ server.registerTool(
   'list_notes',
   {
     title: 'List Notes',
-    description: 'List notes for a project or globally',
+    description: 'List notes for a project or globally. Supports date-range filtering.',
     inputSchema: z.object({
       projectId: z.string().optional().describe('Project ID. If omitted, lists global notes.'),
+      pinnedOnly: z.boolean().optional().describe('Only return pinned notes'),
+      createdAfter: z.string().optional().describe('ISO 8601 datetime — only notes created after this time'),
+      createdBefore: z.string().optional().describe('ISO 8601 datetime — only notes created before this time'),
+      updatedAfter: z.string().optional().describe('ISO 8601 datetime — only notes updated after this time'),
+      updatedBefore: z.string().optional().describe('ISO 8601 datetime — only notes updated before this time'),
     }),
   },
-  async ({ projectId }) => {
-    const rows = projectId
-      ? db.prepare('SELECT * FROM notes WHERE projectId = ? ORDER BY updatedAt DESC').all(projectId)
-      : db.prepare('SELECT * FROM notes WHERE isGlobal = 1 ORDER BY updatedAt DESC').all()
+  async ({ projectId, pinnedOnly, createdAfter, createdBefore, updatedAfter, updatedBefore }) => {
+    const conditions: string[] = []
+    const params: unknown[] = []
+
+    if (projectId) {
+      conditions.push('projectId = ?')
+      params.push(projectId)
+    } else {
+      conditions.push('isGlobal = 1')
+    }
+    if (pinnedOnly) { conditions.push('pinned = 1') }
+    if (createdAfter) { conditions.push('createdAt >= ?'); params.push(createdAfter) }
+    if (createdBefore) { conditions.push('createdAt <= ?'); params.push(createdBefore) }
+    if (updatedAfter) { conditions.push('updatedAt >= ?'); params.push(updatedAfter) }
+    if (updatedBefore) { conditions.push('updatedAt <= ?'); params.push(updatedBefore) }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+    const rows = db.prepare(`SELECT * FROM notes ${where} ORDER BY updatedAt DESC`).all(...params)
     return { content: [{ type: 'text' as const, text: JSON.stringify(rows, null, 2) }] }
   }
 )
@@ -404,26 +443,30 @@ server.registerTool(
   'search_notes',
   {
     title: 'Search Notes',
-    description: 'Full-text search across notes',
+    description: 'Full-text search across notes. Supports date-range filtering.',
     inputSchema: z.object({
       query: z.string().describe('Search query'),
       projectId: z.string().optional().describe('Limit search to a project'),
+      createdAfter: z.string().optional().describe('ISO 8601 datetime — only notes created after this time'),
+      createdBefore: z.string().optional().describe('ISO 8601 datetime — only notes created before this time'),
+      updatedAfter: z.string().optional().describe('ISO 8601 datetime — only notes updated after this time'),
+      updatedBefore: z.string().optional().describe('ISO 8601 datetime — only notes updated before this time'),
     }),
   },
-  async ({ query, projectId }) => {
-    const rows = projectId
-      ? db.prepare(
-          `SELECT notes.* FROM notes
-           JOIN notesFts ON notes.id = notesFts.rowid
-           WHERE notesFts MATCH ? AND notes.projectId = ?
-           ORDER BY rank`
-        ).all(query, projectId)
-      : db.prepare(
-          `SELECT notes.* FROM notes
-           JOIN notesFts ON notes.id = notesFts.rowid
-           WHERE notesFts MATCH ?
-           ORDER BY rank`
-        ).all(query)
+  async ({ query, projectId, createdAfter, createdBefore, updatedAfter, updatedBefore }) => {
+    const conditions = ['notesFts MATCH ?']
+    const params: unknown[] = [query]
+
+    if (projectId) { conditions.push('notes.projectId = ?'); params.push(projectId) }
+    if (createdAfter) { conditions.push('notes.createdAt >= ?'); params.push(createdAfter) }
+    if (createdBefore) { conditions.push('notes.createdAt <= ?'); params.push(createdBefore) }
+    if (updatedAfter) { conditions.push('notes.updatedAt >= ?'); params.push(updatedAfter) }
+    if (updatedBefore) { conditions.push('notes.updatedAt <= ?'); params.push(updatedBefore) }
+
+    const where = `WHERE ${conditions.join(' AND ')}`
+    const rows = db.prepare(
+      `SELECT notes.* FROM notes JOIN notesFts ON notes.id = notesFts.rowid ${where} ORDER BY rank`
+    ).all(...params)
     return { content: [{ type: 'text' as const, text: JSON.stringify(rows, null, 2) }] }
   }
 )
@@ -434,16 +477,25 @@ server.registerTool(
   'list_sessions',
   {
     title: 'List Sessions',
-    description: 'List coding sessions for a project',
+    description: 'List coding sessions for a project. Supports date-range filtering.',
     inputSchema: z.object({
       projectId: z.string().describe('Project ID'),
       limit: z.number().optional().describe('Max results (default 20)'),
+      startedAfter: z.string().optional().describe('ISO 8601 datetime — only sessions started after this time'),
+      startedBefore: z.string().optional().describe('ISO 8601 datetime — only sessions started before this time'),
     }),
   },
-  async ({ projectId, limit }) => {
+  async ({ projectId, limit, startedAfter, startedBefore }) => {
+    const conditions = ['projectId = ?']
+    const params: unknown[] = [projectId]
+
+    if (startedAfter) { conditions.push('startedAt >= ?'); params.push(startedAfter) }
+    if (startedBefore) { conditions.push('startedAt <= ?'); params.push(startedBefore) }
+
+    const where = `WHERE ${conditions.join(' AND ')}`
     const rows = db
-      .prepare('SELECT * FROM sessions WHERE projectId = ? ORDER BY startedAt DESC LIMIT ?')
-      .all(projectId, limit ?? 20)
+      .prepare(`SELECT * FROM sessions ${where} ORDER BY startedAt DESC LIMIT ?`)
+      .all(...params, limit ?? 20)
     return { content: [{ type: 'text' as const, text: JSON.stringify(rows, null, 2) }] }
   }
 )
