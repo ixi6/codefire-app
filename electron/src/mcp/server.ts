@@ -1243,7 +1243,7 @@ server.registerTool(
   {
     title: 'Browser Get Cookies',
     description:
-      'Get cookies for the current page, including httpOnly cookies not visible to JavaScript. Useful for debugging authentication, session management, and tracking. Requires CodeFire browser.',
+      'Get non-sensitive cookies for the current page. HttpOnly cookies are excluded for security. Useful for debugging authentication flows and tracking. Requires CodeFire browser.',
     inputSchema: z.object({
       domain: z
         .string()
@@ -1251,12 +1251,27 @@ server.registerTool(
         .describe("Filter cookies by domain substring (e.g. 'example.com')"),
       tab_id: z.string().optional().describe('Tab ID (defaults to active tab)'),
     }),
+    annotations: {
+      destructiveHint: false,
+      readOnlyHint: true,
+      openWorldHint: true,
+    },
   },
   async ({ domain, tab_id }) => {
     const args: Record<string, unknown> = {}
     if (domain) args.domain = domain
     if (tab_id) args.tab_id = tab_id
     const result = await executeBrowserCommand('browser_get_cookies', args)
+    // Filter out httpOnly cookies to prevent session hijacking
+    try {
+      const parsed = JSON.parse(result)
+      if (parsed.cookies && Array.isArray(parsed.cookies)) {
+        parsed.cookies = parsed.cookies.filter((c: { httpOnly?: boolean }) => !c.httpOnly)
+        return textResult(JSON.stringify(parsed, null, 2))
+      }
+    } catch {
+      // If result isn't JSON, return as-is
+    }
     return textResult(result)
   }
 )
@@ -1268,7 +1283,7 @@ server.registerTool(
   {
     title: 'Browser Get Storage',
     description:
-      'Read localStorage or sessionStorage contents. Returns item count, key-value pairs, and total size in bytes. Requires CodeFire browser.',
+      'Read localStorage or sessionStorage contents. Returns item count, key-value pairs, and total size in bytes. Keys containing tokens, secrets, or credentials are redacted. Requires CodeFire browser.',
     inputSchema: z.object({
       type: z
         .enum(['localStorage', 'sessionStorage'])
@@ -1279,12 +1294,32 @@ server.registerTool(
         .describe('Only return keys starting with this prefix'),
       tab_id: z.string().optional().describe('Tab ID (defaults to active tab)'),
     }),
+    annotations: {
+      destructiveHint: false,
+      readOnlyHint: true,
+      openWorldHint: true,
+    },
   },
   async ({ type: storageType, prefix, tab_id }) => {
     const args: Record<string, unknown> = { type: storageType ?? 'localStorage' }
     if (prefix) args.prefix = prefix
     if (tab_id) args.tab_id = tab_id
     const result = await executeBrowserCommand('browser_get_storage', args)
+    // Redact values for keys that likely contain sensitive data
+    const sensitivePattern = /token|secret|credential|password|api.?key|session.?id|auth|jwt/i
+    try {
+      const parsed = JSON.parse(result)
+      if (parsed.items && typeof parsed.items === 'object') {
+        for (const key of Object.keys(parsed.items)) {
+          if (sensitivePattern.test(key)) {
+            parsed.items[key] = '[REDACTED]'
+          }
+        }
+        return textResult(JSON.stringify(parsed, null, 2))
+      }
+    } catch {
+      // If result isn't JSON, return as-is
+    }
     return textResult(result)
   }
 )
