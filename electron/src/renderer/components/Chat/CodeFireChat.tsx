@@ -654,6 +654,7 @@ export default function CodeFireChat({ projectId, projectName = 'All Projects' }
 
     const content = input.trim()
     setInput('')
+    if (inputRef.current) inputRef.current.style.height = 'auto'
     setSending(true)
     setErrorMessage(null)
     setToolExecutions([])
@@ -1175,7 +1176,12 @@ export default function CodeFireChat({ projectId, projectName = 'All Projects' }
           <textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value)
+              const el = e.target
+              el.style.height = 'auto'
+              el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
@@ -1183,7 +1189,8 @@ export default function CodeFireChat({ projectId, projectName = 'All Projects' }
               }
             }}
             rows={1}
-            className="flex-1 bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-codefire-orange/50 resize-none max-h-24"
+            className="flex-1 bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-codefire-orange/50 resize-none"
+            style={{ maxHeight: 160 }}
             placeholder={chatMode === 'agent' ? `Ask or command the agent...` : `Ask about ${projectName}...`}
             disabled={sending}
           />
