@@ -1226,20 +1226,33 @@ function ChatBubble({
 }) {
   const isUser = role === 'user'
   const [showActions, setShowActions] = useState(false)
+  const bubbleRef = useRef<HTMLDivElement>(null)
+
+  // Close actions when clicking outside the bubble
+  useEffect(() => {
+    if (!showActions) return
+    function handleClickOutside(e: MouseEvent) {
+      if (bubbleRef.current && !bubbleRef.current.contains(e.target as Node)) {
+        setShowActions(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showActions])
 
   return (
     <div
+      ref={bubbleRef}
       className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
-      onMouseEnter={() => !isUser && setShowActions(true)}
-      onMouseLeave={() => setShowActions(false)}
     >
       <div className="relative max-w-[90%]">
         <div
           className={`rounded-lg px-3 py-2 text-xs leading-relaxed ${
             isUser
               ? 'bg-codefire-orange/20 text-neutral-200'
-              : 'bg-neutral-800 text-neutral-300 border border-neutral-700/50'
+              : 'bg-neutral-800 text-neutral-300 border border-neutral-700/50 cursor-pointer'
           }`}
+          onClick={() => !isUser && setShowActions((v) => !v)}
         >
           <MarkdownContent content={content} />
         </div>
