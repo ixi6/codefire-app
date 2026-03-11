@@ -63,4 +63,25 @@ module.exports = async function (context) {
   } else {
     console.warn('[afterPack] MCP server package.json not found at', mcpDir)
   }
+
+  // --- 3. Strip macOS resource forks (prevents code signing failure) ---
+  // MUST run last, after npm install and all other file operations, because
+  // npm install can create files with resource forks that block codesign.
+  // Uses both dot_clean (removes AppleDouble ._ files) and xattr -cr (removes
+  // extended attributes) to cover all resource fork variants.
+  if (platform === 'darwin') {
+    const appPath = path.join(appOutDir, `${appName}.app`)
+    try {
+      execFileSync('dot_clean', [appPath], { stdio: 'inherit' })
+      console.log('[afterPack] dot_clean stripped AppleDouble forks from', appPath)
+    } catch (err) {
+      console.warn('[afterPack] dot_clean failed (non-fatal):', err.message)
+    }
+    try {
+      execFileSync('xattr', ['-cr', appPath], { stdio: 'inherit' })
+      console.log('[afterPack] xattr -cr stripped extended attributes from', appPath)
+    } catch (err) {
+      console.warn('[afterPack] xattr -cr failed (non-fatal):', err.message)
+    }
+  }
 }
