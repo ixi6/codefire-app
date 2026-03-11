@@ -50,6 +50,9 @@ const ALLOWED_SETTINGS_KEYS = new Set<keyof AppConfig>([
   // Teams (non-infrastructure)
   'premiumEnabled',
   'autoShareSessions',
+  // MCP auto-setup
+  'mcpAutoSetupDismissed',
+  'mcpDismissedProjects',
   // Credentials — allowed because the Settings UI needs to set them,
   // but they go through the same writeConfig path. The real protection
   // is that they are written to the same file the user already controls.
