@@ -84,7 +84,7 @@ export function registerSettingsHandlers(
     writeConfig(filtered)
 
     // Update MCP secrets file if API keys changed
-    if ('openRouterKey' in filtered) {
+    if ('openRouterKey' in filtered || 'openAiKey' in filtered) {
       writeMCPSecrets()
     }
 

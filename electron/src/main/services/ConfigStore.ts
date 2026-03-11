@@ -184,7 +184,11 @@ export function writeMCPSecrets(): void {
     const config = readConfig()
     const secrets: Record<string, string> = {}
     if (config.openRouterKey) secrets.openRouterKey = config.openRouterKey
+    if (config.openAiKey) secrets.openAiKey = config.openAiKey
     const secretsPath = path.join(app.getPath('userData'), 'mcp-secrets.json')
-    fs.writeFileSync(secretsPath, JSON.stringify(secrets, null, 2), { mode: 0o600 })
+    // Atomic write: write to temp file then rename (prevents corrupt reads)
+    const tmpPath = secretsPath + '.tmp'
+    fs.writeFileSync(tmpPath, JSON.stringify(secrets, null, 2), { mode: 0o600 })
+    fs.renameSync(tmpPath, secretsPath)
   } catch { /* non-critical */ }
 }
