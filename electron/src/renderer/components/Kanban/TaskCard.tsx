@@ -9,6 +9,8 @@ interface TaskCardProps {
   onClick: () => void
   noteCount?: number
   projectName?: string
+  projectColor?: string | null
+  groupColor?: string | null
   isDragOverlay?: boolean
   onMoveTask?: (taskId: number, newStatus: string) => void
   onLaunchSession?: (task: TaskItem) => void
@@ -83,7 +85,7 @@ const MOVE_TARGETS: { status: string; label: string }[] = [
   { status: 'done', label: 'Done' },
 ]
 
-export default function TaskCard({ task, onClick, noteCount = 0, projectName, isDragOverlay, onMoveTask, onLaunchSession, onDeleteTask }: TaskCardProps) {
+export default function TaskCard({ task, onClick, noteCount = 0, projectName, projectColor, groupColor, isDragOverlay, onMoveTask, onLaunchSession, onDeleteTask }: TaskCardProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -152,7 +154,16 @@ export default function TaskCard({ task, onClick, noteCount = 0, projectName, is
           {/* Meta row: project group (left) + date (right) */}
           <div className="flex items-center gap-1.5 mt-1 text-[10px] text-neutral-500">
             {projectName && (
-              <span className="px-1.5 py-0.5 rounded bg-codefire-orange/12 text-codefire-orange border border-codefire-orange/20 font-medium truncate max-w-[100px]">
+              <span
+                className={`px-1.5 py-0.5 rounded font-medium truncate max-w-[100px] border ${
+                  !groupColor && !projectColor ? 'bg-codefire-orange/12 text-codefire-orange border-codefire-orange/20' : ''
+                }`}
+                style={groupColor || projectColor ? {
+                  backgroundColor: groupColor ? `${groupColor}1F` : undefined,
+                  borderColor: groupColor ? `${groupColor}33` : undefined,
+                  color: projectColor || undefined,
+                } : undefined}
+              >
                 {projectName}
               </span>
             )}

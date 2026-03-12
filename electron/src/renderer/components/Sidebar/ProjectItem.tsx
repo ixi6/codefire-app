@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { Folder, Tag, Users, FolderOpen, Trash2, X, Check, Palette } from 'lucide-react'
+import { Folder, Tag, Users, FolderOpen, Trash2, X, Check, Palette, Pencil, Settings } from 'lucide-react'
 import type { Project, Client } from '@shared/models'
 import { api } from '@renderer/lib/api'
+import ProjectSettingsModal from '@renderer/components/Header/ProjectSettingsModal'
 
 interface ProjectItemProps {
   project: Project
@@ -73,8 +74,13 @@ export default function ProjectItem({ project, onClick, indent, isSelected, clie
   const name = displayName(project)
   const [menu, setMenu] = useState<ContextMenuState | null>(null)
   const [tagInput, setTagInput] = useState('')
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingName, setEditingName] = useState('')
+  const [showSettings, setShowSettings] = useState(false)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const tagInputRef = useRef<HTMLInputElement>(null)
+  const renameInputRef = useRef<HTMLInputElement>(null)
 
   const handleClick = () => {
     onClick()
@@ -167,6 +173,36 @@ export default function ProjectItem({ project, onClick, indent, isSelected, clie
     onRefresh?.()
   }
 
+  function startRename() {
+    setIsEditing(true)
+    setEditingName(name)
+    closeMenu()
+    setTimeout(() => renameInputRef.current?.select(), 50)
+  }
+
+  async function handleRenameSubmit() {
+    const trimmed = editingName.trim()
+    if (trimmed && trimmed !== name) {
+      await api.projects.update(project.id, { name: trimmed })
+      onRefresh?.()
+    }
+    setIsEditing(false)
+    setEditingName('')
+  }
+
+  function handleLongPressStart() {
+    longPressTimerRef.current = setTimeout(() => {
+      startRename()
+    }, 500)
+  }
+
+  function handleLongPressEnd() {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }
+
   // Clamp menu position to viewport
   const menuStyle = menu
     ? {
@@ -177,38 +213,66 @@ export default function ProjectItem({ project, onClick, indent, isSelected, clie
 
   return (
     <>
-      <button
-        onClick={handleClick}
-        onDoubleClick={handleDoubleClick}
-        onContextMenu={handleContextMenu}
-        className={`
-          w-full flex items-center gap-2 py-1 rounded text-left
-          text-[12px] transition-colors duration-100 cursor-default
-          ${isSelected
-            ? 'bg-codefire-orange/10 text-codefire-orange'
-            : 'text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200'}
-          ${indent ? 'pl-7 pr-3' : 'px-3'}
-        `}
-      >
-        <Folder size={13} className={`flex-shrink-0 ${project.color ? '' : 'text-neutral-600'}`} style={project.color ? { color: project.color } : undefined} />
-        <span className="truncate">{name}</span>
-        {tags.length > 0 && (
-          <div className="flex items-center gap-1 ml-auto flex-shrink-0">
-            {tags.map((tag) => (
-              <span
-                key={tag}
-                className="
-                  inline-block px-1.5 py-px rounded
-                  text-[10px] text-neutral-500 bg-neutral-800
-                  leading-tight
-                "
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
-      </button>
+      {isEditing ? (
+        <div className={`w-full flex items-center gap-2 py-0.5 ${indent ? 'pl-7 pr-3' : 'px-3'}`}>
+          <Folder size={13} className={`flex-shrink-0 ${project.color ? '' : 'text-neutral-600'}`} style={project.color ? { color: project.color } : undefined} />
+          <input
+            ref={renameInputRef}
+            type="text"
+            value={editingName}
+            onChange={(e) => setEditingName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleRenameSubmit()
+              if (e.key === 'Escape') { setIsEditing(false); setEditingName('') }
+            }}
+            onBlur={() => handleRenameSubmit()}
+            className="flex-1 bg-neutral-800 border border-codefire-orange rounded px-1.5 py-0.5 text-[12px] text-neutral-200 focus:outline-none min-w-0"
+          />
+        </div>
+      ) : (
+        <button
+          onClick={handleClick}
+          onDoubleClick={handleDoubleClick}
+          onContextMenu={handleContextMenu}
+          onMouseDown={handleLongPressStart}
+          onMouseUp={handleLongPressEnd}
+          onMouseLeave={handleLongPressEnd}
+          className={`
+            w-full flex items-center gap-2 py-1 rounded text-left group
+            text-[12px] transition-colors duration-100 cursor-default
+            ${isSelected
+              ? 'bg-codefire-orange/10 text-codefire-orange'
+              : 'text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200'}
+            ${indent ? 'pl-7 pr-3' : 'px-3'}
+          `}
+        >
+          <Folder size={13} className={`flex-shrink-0 ${project.color ? '' : 'text-neutral-600'}`} style={project.color ? { color: project.color } : undefined} />
+          <span className="truncate">{name}</span>
+          {tags.length > 0 && (
+            <div className="flex items-center gap-1 ml-auto flex-shrink-0">
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="
+                    inline-block px-1.5 py-px rounded
+                    text-[10px] text-neutral-500 bg-neutral-800
+                    leading-tight
+                  "
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+          <span
+            className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-neutral-600 hover:text-neutral-300 shrink-0"
+            onClick={(e) => { e.stopPropagation(); setShowSettings(true) }}
+            title="Project settings"
+          >
+            <Settings size={11} />
+          </span>
+        </button>
+      )}
 
       {/* Context Menu */}
       {menu && (
@@ -219,6 +283,13 @@ export default function ProjectItem({ project, onClick, indent, isSelected, clie
         >
           {!menu.submenu && (
             <>
+              <button
+                onClick={startRename}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-neutral-300 hover:bg-white/[0.06] hover:text-neutral-100"
+              >
+                <Pencil size={13} />
+                Rename
+              </button>
               <button
                 onClick={() => setMenu({ ...menu, submenu: 'tag' })}
                 className="w-full flex items-center gap-2 px-3 py-1.5 text-neutral-300 hover:bg-white/[0.06] hover:text-neutral-100"
@@ -385,6 +456,16 @@ export default function ProjectItem({ project, onClick, indent, isSelected, clie
             </div>
           )}
         </div>
+      )}
+
+      {/* Project Settings Modal */}
+      {showSettings && (
+        <ProjectSettingsModal
+          project={project}
+          clients={clients ?? []}
+          onClose={() => setShowSettings(false)}
+          onSaved={() => onRefresh?.()}
+        />
       )}
     </>
   )

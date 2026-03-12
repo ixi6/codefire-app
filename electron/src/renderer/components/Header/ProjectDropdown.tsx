@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef, type DragEvent } from 'react'
-import { Folder, FolderOpen, Settings, Plus, ChevronDown, Check, X, LayoutGrid, Users, Tag, Trash2, GripVertical, Palette } from 'lucide-react'
+import { Folder, FolderOpen, Settings, Plus, ChevronDown, Check, X, LayoutGrid, Users, Tag, Trash2, GripVertical, Palette, Pencil } from 'lucide-react'
 import type { Project, Client } from '@shared/models'
 import { api } from '@renderer/lib/api'
 import SettingsModal from '@renderer/components/Settings/SettingsModal'
+import ProjectSettingsModal from './ProjectSettingsModal'
 
 function displayName(project: Project): string {
   const name = project.name
@@ -49,9 +50,14 @@ export default function ProjectDropdown() {
   const [dragProjectId, setDragProjectId] = useState<string | null>(null)
   const [dragOverClientId, setDragOverClientId] = useState<string | null>(null)
   const [dragOverUngrouped, setDragOverUngrouped] = useState(false)
+  const [settingsProject, setSettingsProject] = useState<Project | null>(null)
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const addGroupInputRef = useRef<HTMLInputElement>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
+  const renameInputRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     try {
@@ -186,6 +192,36 @@ export default function ProjectDropdown() {
     load()
   }
 
+  function startRename(project: Project) {
+    setEditingProjectId(project.id)
+    setEditingName(displayName(project))
+    setContextMenu(null)
+    setTimeout(() => renameInputRef.current?.select(), 50)
+  }
+
+  async function handleRenameSubmit(projectId: string) {
+    const trimmed = editingName.trim()
+    if (trimmed && trimmed !== displayName(projects.find((p) => p.id === projectId)!)) {
+      await api.projects.update(projectId, { name: trimmed })
+      load()
+    }
+    setEditingProjectId(null)
+    setEditingName('')
+  }
+
+  function handleRenameLongPressStart(project: Project) {
+    longPressTimerRef.current = setTimeout(() => {
+      startRename(project)
+    }, 500)
+  }
+
+  function handleRenameLongPressEnd() {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }
+
   function handleDragStart(e: DragEvent, projectId: string) {
     e.dataTransfer.setData('application/x-codefire-project', projectId)
     e.dataTransfer.effectAllowed = 'move'
@@ -306,7 +342,24 @@ export default function ProjectDropdown() {
                       {isExpanded && clientProjects.map((project) => {
                         const tag = firstTag(project)
                         const isDragging = dragProjectId === project.id
-                        return (
+                        const isEditing = editingProjectId === project.id
+                        return isEditing ? (
+                          <div key={project.id} className="flex items-center gap-2 pl-5 pr-3 py-1">
+                            <Folder size={12} className={`flex-shrink-0 ${project.color ? '' : 'text-neutral-600'}`} style={project.color ? { color: project.color } : undefined} />
+                            <input
+                              ref={renameInputRef}
+                              type="text"
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleRenameSubmit(project.id)
+                                if (e.key === 'Escape') { setEditingProjectId(null); setEditingName('') }
+                              }}
+                              onBlur={() => handleRenameSubmit(project.id)}
+                              className="flex-1 bg-neutral-800 border border-codefire-orange rounded px-1.5 py-0.5 text-[12px] text-neutral-200 focus:outline-none min-w-0"
+                            />
+                          </div>
+                        ) : (
                           <button
                             key={project.id}
                             draggable
@@ -314,6 +367,9 @@ export default function ProjectDropdown() {
                             onDragEnd={handleDragEnd}
                             onClick={() => handleOpenProject(project.id)}
                             onContextMenu={(e) => handleProjectContextMenu(e, project)}
+                            onMouseDown={() => handleRenameLongPressStart(project)}
+                            onMouseUp={handleRenameLongPressEnd}
+                            onMouseLeave={handleRenameLongPressEnd}
                             className={`w-full flex items-center gap-2 pl-5 pr-3 py-1.5 text-[12px] transition-colors text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200 group ${isDragging ? 'opacity-40' : ''}`}
                           >
                             <GripVertical size={10} className="flex-shrink-0 text-neutral-700 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
@@ -324,6 +380,13 @@ export default function ProjectDropdown() {
                                 {tag}
                               </span>
                             )}
+                            <span
+                              className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-neutral-600 hover:text-neutral-300 shrink-0"
+                              onClick={(e) => { e.stopPropagation(); setSettingsProject(project) }}
+                              title="Project settings"
+                            >
+                              <Settings size={11} />
+                            </span>
                           </button>
                         )
                       })}
@@ -349,7 +412,24 @@ export default function ProjectDropdown() {
                     {ungrouped.map((project) => {
                       const tag = firstTag(project)
                       const isDragging = dragProjectId === project.id
-                      return (
+                      const isEditing = editingProjectId === project.id
+                      return isEditing ? (
+                        <div key={project.id} className="flex items-center gap-2 px-1.5 pr-3 py-1">
+                          <Folder size={12} className={`flex-shrink-0 ${project.color ? '' : 'text-neutral-600'}`} style={project.color ? { color: project.color } : undefined} />
+                          <input
+                            ref={renameInputRef}
+                            type="text"
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleRenameSubmit(project.id)
+                              if (e.key === 'Escape') { setEditingProjectId(null); setEditingName('') }
+                            }}
+                            onBlur={() => handleRenameSubmit(project.id)}
+                            className="flex-1 bg-neutral-800 border border-codefire-orange rounded px-1.5 py-0.5 text-[12px] text-neutral-200 focus:outline-none min-w-0"
+                          />
+                        </div>
+                      ) : (
                         <button
                           key={project.id}
                           draggable
@@ -357,6 +437,9 @@ export default function ProjectDropdown() {
                           onDragEnd={handleDragEnd}
                           onClick={() => handleOpenProject(project.id)}
                           onContextMenu={(e) => handleProjectContextMenu(e, project)}
+                          onMouseDown={() => handleRenameLongPressStart(project)}
+                          onMouseUp={handleRenameLongPressEnd}
+                          onMouseLeave={handleRenameLongPressEnd}
                           className={`w-full flex items-center gap-2 px-1.5 pr-3 py-1.5 text-[12px] transition-colors text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200 group ${isDragging ? 'opacity-40' : ''}`}
                         >
                           <GripVertical size={10} className="flex-shrink-0 text-neutral-700 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
@@ -367,6 +450,13 @@ export default function ProjectDropdown() {
                               {tag}
                             </span>
                           )}
+                            <span
+                              className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-neutral-600 hover:text-neutral-300 shrink-0"
+                              onClick={(e) => { e.stopPropagation(); setSettingsProject(project) }}
+                              title="Project settings"
+                            >
+                              <Settings size={11} />
+                            </span>
                         </button>
                       )
                     })}
@@ -460,6 +550,16 @@ export default function ProjectDropdown() {
       {/* Settings Modal */}
       <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
 
+      {/* Project Settings Modal */}
+      {settingsProject && (
+        <ProjectSettingsModal
+          project={settingsProject}
+          clients={clients}
+          onClose={() => setSettingsProject(null)}
+          onSaved={load}
+        />
+      )}
+
       {/* Project Context Menu */}
       {contextMenu && (
         <div
@@ -472,6 +572,13 @@ export default function ProjectDropdown() {
         >
           {!contextMenu.submenu && (
             <>
+              <button
+                onClick={() => startRename(contextMenu.project)}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-neutral-300 hover:bg-white/[0.06] hover:text-neutral-100"
+              >
+                <Pencil size={13} />
+                Rename
+              </button>
               <button
                 onClick={() => setContextMenu({ ...contextMenu, submenu: 'tag', tagInput: firstTag(contextMenu.project) ?? '' })}
                 className="w-full flex items-center gap-2 px-3 py-1.5 text-neutral-300 hover:bg-white/[0.06] hover:text-neutral-100"

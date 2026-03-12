@@ -35,6 +35,10 @@ interface KanbanBoardProps {
   onAddTask: (title: string, status?: string) => Promise<unknown>
   /** Map of projectId → projectName, for showing project badge on task cards in global view */
   projectNames?: Record<string, string>
+  /** Map of projectId → project color */
+  projectColors?: Record<string, string | null>
+  /** Map of projectId → group/client color */
+  projectGroupColors?: Record<string, string | null>
   /** Project path for launching CLI sessions */
   projectPath?: string
   /** Project ID for task creation */
@@ -59,6 +63,8 @@ export default function KanbanBoard({
   onDeleteTask,
   onAddTask,
   projectNames,
+  projectColors,
+  projectGroupColors,
   projectPath,
   projectId,
   pollingPaused,
@@ -269,6 +275,8 @@ export default function KanbanBoard({
               onLaunchSession={handleLaunchSession}
               onDeleteTask={handleDeleteTask}
               projectNames={projectNames}
+              projectColors={projectColors}
+              projectGroupColors={projectGroupColors}
             />
           ))}
         </div>
@@ -335,6 +343,8 @@ export default function KanbanBoard({
               task={activeTask}
               onClick={() => {}}
               projectName={projectNames?.[activeTask.projectId]}
+              projectColor={projectColors?.[activeTask.projectId]}
+              groupColor={projectGroupColors?.[activeTask.projectId]}
               isDragOverlay
             />
           </div>

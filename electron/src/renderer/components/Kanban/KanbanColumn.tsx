@@ -45,6 +45,8 @@ interface KanbanColumnProps {
   onLaunchSession?: (task: TaskItem) => void
   onDeleteTask?: (taskId: number) => void
   projectNames?: Record<string, string>
+  projectColors?: Record<string, string | null>
+  projectGroupColors?: Record<string, string | null>
 }
 
 export default function KanbanColumn({
@@ -61,6 +63,8 @@ export default function KanbanColumn({
   onLaunchSession,
   onDeleteTask,
   projectNames,
+  projectColors,
+  projectGroupColors,
 }: KanbanColumnProps) {
   const [newTitle, setNewTitle] = useState('')
   const [showInput, setShowInput] = useState(false)
@@ -164,6 +168,8 @@ export default function KanbanColumn({
               onLaunchSession={onLaunchSession}
               onDeleteTask={onDeleteTask}
               projectName={projectNames?.[task.projectId]}
+              projectColor={projectColors?.[task.projectId]}
+              groupColor={projectGroupColors?.[task.projectId]}
             />
           ))}
         </SortableContext>
