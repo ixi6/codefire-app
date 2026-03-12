@@ -11,6 +11,7 @@ export interface Project {
   tags: string | null
   sortOrder: number
   repoUrl: string | null
+  color: string | null
 }
 
 export interface Session {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type DragEvent } from 'react'
-import { Folder, FolderOpen, Settings, Plus, ChevronDown, Check, X, LayoutGrid, Users, Tag, Trash2, GripVertical } from 'lucide-react'
+import { Folder, FolderOpen, Settings, Plus, ChevronDown, Check, X, LayoutGrid, Users, Tag, Trash2, GripVertical, Palette } from 'lucide-react'
 import type { Project, Client } from '@shared/models'
 import { api } from '@renderer/lib/api'
 import SettingsModal from '@renderer/components/Settings/SettingsModal'
@@ -31,7 +31,7 @@ interface ProjectContextMenu {
   x: number
   y: number
   project: Project
-  submenu?: 'group' | 'tag'
+  submenu?: 'group' | 'tag' | 'color'
   tagInput?: string
 }
 
@@ -180,6 +180,12 @@ export default function ProjectDropdown() {
     load()
   }
 
+  async function handleSetColor(project: Project, color: string | null) {
+    await api.projects.update(project.id, { color })
+    setContextMenu(null)
+    load()
+  }
+
   function handleDragStart(e: DragEvent, projectId: string) {
     e.dataTransfer.setData('application/x-codefire-project', projectId)
     e.dataTransfer.effectAllowed = 'move'
@@ -311,7 +317,7 @@ export default function ProjectDropdown() {
                             className={`w-full flex items-center gap-2 pl-5 pr-3 py-1.5 text-[12px] transition-colors text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200 group ${isDragging ? 'opacity-40' : ''}`}
                           >
                             <GripVertical size={10} className="flex-shrink-0 text-neutral-700 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
-                            <Folder size={12} className="flex-shrink-0 text-neutral-600" />
+                            <Folder size={12} className={`flex-shrink-0 ${project.color ? '' : 'text-neutral-600'}`} style={project.color ? { color: project.color } : undefined} />
                             <span className="truncate">{displayName(project)}</span>
                             {tag && (
                               <span className="text-[9px] font-medium text-neutral-500 px-1.5 py-0.5 rounded-full bg-neutral-800 shrink-0 ml-auto">
@@ -354,7 +360,7 @@ export default function ProjectDropdown() {
                           className={`w-full flex items-center gap-2 px-1.5 pr-3 py-1.5 text-[12px] transition-colors text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200 group ${isDragging ? 'opacity-40' : ''}`}
                         >
                           <GripVertical size={10} className="flex-shrink-0 text-neutral-700 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
-                          <Folder size={12} className="flex-shrink-0 text-neutral-600" />
+                          <Folder size={12} className={`flex-shrink-0 ${project.color ? '' : 'text-neutral-600'}`} style={project.color ? { color: project.color } : undefined} />
                           <span className="truncate">{displayName(project)}</span>
                           {tag && (
                             <span className="text-[9px] font-medium text-neutral-500 px-1.5 py-0.5 rounded-full bg-neutral-800 shrink-0 ml-auto">
@@ -481,6 +487,13 @@ export default function ProjectDropdown() {
                 Set Group
               </button>
               <button
+                onClick={() => setContextMenu({ ...contextMenu, submenu: 'color' })}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-neutral-300 hover:bg-white/[0.06] hover:text-neutral-100"
+              >
+                <Palette size={13} />
+                Set Color
+              </button>
+              <button
                 onClick={() => {
                   if (contextMenu.project.path) api.shell.showInExplorer(contextMenu.project.path)
                   setContextMenu(null)
@@ -577,6 +590,49 @@ export default function ProjectDropdown() {
                   No groups yet. Create one first.
                 </div>
               )}
+            </div>
+          )}
+
+          {contextMenu.submenu === 'color' && (
+            <div className="py-0.5">
+              <button
+                onClick={() => setContextMenu({ ...contextMenu, submenu: undefined })}
+                className="w-full flex items-center gap-2 px-3 py-1 text-neutral-500 hover:bg-white/[0.06] hover:text-neutral-300 text-[11px]"
+              >
+                <X size={11} />
+                Back
+              </button>
+              <div className="mx-2 my-1 border-t border-neutral-800" />
+              <div className="grid grid-cols-7 gap-1 px-2 py-1.5">
+                {[
+                  { name: 'Default', value: null },
+                  { name: 'Red', value: '#EF4444' },
+                  { name: 'Orange', value: '#F97316' },
+                  { name: 'Amber', value: '#F59E0B' },
+                  { name: 'Yellow', value: '#EAB308' },
+                  { name: 'Lime', value: '#84CC16' },
+                  { name: 'Green', value: '#22C55E' },
+                  { name: 'Teal', value: '#14B8A6' },
+                  { name: 'Cyan', value: '#06B6D4' },
+                  { name: 'Blue', value: '#3B82F6' },
+                  { name: 'Indigo', value: '#6366F1' },
+                  { name: 'Purple', value: '#A855F7' },
+                  { name: 'Pink', value: '#EC4899' },
+                  { name: 'Rose', value: '#F43F5E' },
+                ].map((c) => (
+                  <button
+                    key={c.name}
+                    onClick={() => handleSetColor(contextMenu.project, c.value)}
+                    className={`w-5 h-5 rounded-full border transition-all hover:scale-110 ${
+                      contextMenu.project.color === c.value || (!contextMenu.project.color && !c.value)
+                        ? 'border-white ring-1 ring-white/50 scale-110'
+                        : 'border-neutral-700 hover:border-neutral-500'
+                    }`}
+                    style={{ backgroundColor: c.value || '#525252' }}
+                    title={c.name}
+                  />
+                ))}
+              </div>
             </div>
           )}
         </div>

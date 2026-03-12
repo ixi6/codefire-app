@@ -28,10 +28,10 @@ function truncatePath(p: string, maxLen = 50): string {
  * Renders left (project name) and right (indicators) sections.
  * Parent must provide flex layout with a spacer between them.
  */
-export function ProjectHeaderLeft({ projectName, projectPath }: { projectName: string; projectPath: string }) {
+export function ProjectHeaderLeft({ projectName, projectPath, projectColor }: { projectName: string; projectPath: string; projectColor?: string | null }) {
   return (
     <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-neutral-800/50" title={projectPath}>
-      <Folder className="w-3 h-3 text-codefire-orange fill-codefire-orange" />
+      <Folder className={`w-3 h-3 ${projectColor ? '' : 'text-codefire-orange fill-codefire-orange'}`} style={projectColor ? { color: projectColor, fill: projectColor } : undefined} />
       <span className="text-[11px] font-medium text-neutral-300 max-w-32 truncate">{projectName}</span>
     </div>
   )

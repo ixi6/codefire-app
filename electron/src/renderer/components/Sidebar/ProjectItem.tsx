@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Folder, Tag, Users, FolderOpen, Trash2, X, Check } from 'lucide-react'
+import { Folder, Tag, Users, FolderOpen, Trash2, X, Check, Palette } from 'lucide-react'
 import type { Project, Client } from '@shared/models'
 import { api } from '@renderer/lib/api'
 
@@ -45,10 +45,27 @@ function parseTags(tags: string | null): string[] {
     .filter(Boolean)
 }
 
+const PROJECT_COLORS = [
+  { name: 'Default', value: null },
+  { name: 'Red', value: '#EF4444' },
+  { name: 'Orange', value: '#F97316' },
+  { name: 'Amber', value: '#F59E0B' },
+  { name: 'Yellow', value: '#EAB308' },
+  { name: 'Lime', value: '#84CC16' },
+  { name: 'Green', value: '#22C55E' },
+  { name: 'Teal', value: '#14B8A6' },
+  { name: 'Cyan', value: '#06B6D4' },
+  { name: 'Blue', value: '#3B82F6' },
+  { name: 'Indigo', value: '#6366F1' },
+  { name: 'Purple', value: '#A855F7' },
+  { name: 'Pink', value: '#EC4899' },
+  { name: 'Rose', value: '#F43F5E' },
+]
+
 interface ContextMenuState {
   x: number
   y: number
-  submenu?: 'tag' | 'group'
+  submenu?: 'tag' | 'group' | 'color'
 }
 
 export default function ProjectItem({ project, onClick, indent, isSelected, clients, onRefresh }: ProjectItemProps) {
@@ -144,6 +161,12 @@ export default function ProjectItem({ project, onClick, indent, isSelected, clie
     onRefresh?.()
   }
 
+  async function handleSetColor(color: string | null) {
+    await api.projects.update(project.id, { color })
+    closeMenu()
+    onRefresh?.()
+  }
+
   // Clamp menu position to viewport
   const menuStyle = menu
     ? {
@@ -167,7 +190,7 @@ export default function ProjectItem({ project, onClick, indent, isSelected, clie
           ${indent ? 'pl-7 pr-3' : 'px-3'}
         `}
       >
-        <Folder size={13} className="flex-shrink-0 text-neutral-600" />
+        <Folder size={13} className={`flex-shrink-0 ${project.color ? '' : 'text-neutral-600'}`} style={project.color ? { color: project.color } : undefined} />
         <span className="truncate">{name}</span>
         {tags.length > 0 && (
           <div className="flex items-center gap-1 ml-auto flex-shrink-0">
@@ -209,6 +232,13 @@ export default function ProjectItem({ project, onClick, indent, isSelected, clie
               >
                 <Users size={13} />
                 Set Group
+              </button>
+              <button
+                onClick={() => setMenu({ ...menu, submenu: 'color' })}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-neutral-300 hover:bg-white/[0.06] hover:text-neutral-100"
+              >
+                <Palette size={13} />
+                Set Color
               </button>
               <button
                 onClick={handleShowInExplorer}
@@ -323,6 +353,35 @@ export default function ProjectItem({ project, onClick, indent, isSelected, clie
                   No groups yet. Create one first.
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Color submenu */}
+          {menu.submenu === 'color' && (
+            <div className="py-0.5">
+              <button
+                onClick={() => setMenu({ ...menu, submenu: undefined })}
+                className="w-full flex items-center gap-2 px-3 py-1 text-neutral-500 hover:bg-white/[0.06] hover:text-neutral-300 text-[11px]"
+              >
+                <X size={11} />
+                Back
+              </button>
+              <div className="mx-2 my-1 border-t border-neutral-800" />
+              <div className="grid grid-cols-7 gap-1 px-2 py-1.5">
+                {PROJECT_COLORS.map((c) => (
+                  <button
+                    key={c.name}
+                    onClick={() => handleSetColor(c.value)}
+                    className={`w-5 h-5 rounded-full border transition-all hover:scale-110 ${
+                      project.color === c.value || (!project.color && !c.value)
+                        ? 'border-white ring-1 ring-white/50 scale-110'
+                        : 'border-neutral-700 hover:border-neutral-500'
+                    }`}
+                    style={{ backgroundColor: c.value || '#525252' }}
+                    title={c.name}
+                  />
+                ))}
+              </div>
             </div>
           )}
         </div>

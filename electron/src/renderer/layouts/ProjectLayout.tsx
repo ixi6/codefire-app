@@ -247,7 +247,7 @@ export default function ProjectLayout({ projectId }: ProjectLayoutProps) {
           <span className="text-sm font-semibold text-neutral-200 tracking-tight">CodeFire</span>
           <ProjectDropdown />
           <div className="w-px h-4 bg-neutral-700" />
-          <ProjectHeaderLeft projectName={project?.name ?? '...'} projectPath={project?.path ?? ''} />
+          <ProjectHeaderLeft projectName={project?.name ?? '...'} projectPath={project?.path ?? ''} projectColor={project?.color} />
           <div className="flex-1" />
           {premiumStatus?.enabled && premiumStatus.authenticated && (
             <Suspense fallback={null}>

@@ -149,6 +149,18 @@ export default function TaskCard({ task, onClick, noteCount = 0, projectName, is
         <div className="flex-1 min-w-0">
           <div className="text-sm text-neutral-200 leading-snug line-clamp-2">{task.title}</div>
 
+          {/* Meta row: project group (left) + date (right) */}
+          <div className="flex items-center gap-1.5 mt-1 text-[10px] text-neutral-500">
+            {projectName && (
+              <span className="px-1.5 py-0.5 rounded bg-codefire-orange/12 text-codefire-orange border border-codefire-orange/20 font-medium truncate max-w-[100px]">
+                {projectName}
+              </span>
+            )}
+            <span>
+              {new Date(task.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </span>
+          </div>
+
           {/* Description snippet */}
           {task.description && (
             <div className="text-xs text-neutral-500 mt-1 line-clamp-2 leading-relaxed">
@@ -156,7 +168,7 @@ export default function TaskCard({ task, onClick, noteCount = 0, projectName, is
             </div>
           )}
 
-          {/* Priority + Labels + Source row */}
+          {/* Priority + Labels + Source + Notes row */}
           <div className="flex items-center flex-wrap gap-1 mt-1.5">
             {task.priority > 0 && (
               <span
@@ -191,32 +203,12 @@ export default function TaskCard({ task, onClick, noteCount = 0, projectName, is
             {labels.length > 3 && (
               <span className="text-[10px] text-neutral-500">+{labels.length - 3}</span>
             )}
-          </div>
-
-          {/* Footer: avatar + project badge + note count + date */}
-          <div className="flex items-center gap-2 mt-1.5 text-[10px] text-neutral-500">
-            {task.remoteOwnerName && (
-              <span
-                className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-500/25 text-indigo-300 text-[9px] font-bold shrink-0 ring-1 ring-indigo-500/40"
-                title={task.remoteOwnerName}
-              >
-                {task.remoteOwnerName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-              </span>
-            )}
-            {projectName && (
-              <span className="px-1.5 py-0.5 rounded bg-codefire-orange/12 text-codefire-orange border border-codefire-orange/20 font-medium truncate max-w-[100px]">
-                {projectName}
-              </span>
-            )}
             {noteCount > 0 && (
-              <div className="flex items-center gap-1">
+              <span className="flex items-center gap-1 text-[10px] text-neutral-500 ml-auto">
                 <MessageSquare size={10} />
-                <span>{noteCount}</span>
-              </div>
+                {noteCount}
+              </span>
             )}
-            <span>
-              {new Date(task.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-            </span>
           </div>
         </div>
       </div>

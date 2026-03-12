@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Bell, AtSign, UserPlus, GitPullRequest, CheckCircle, MessageSquare } from 'lucide-react'
+import { Bell, AtSign, UserPlus, GitPullRequest, CheckCircle, MessageSquare, FolderSync } from 'lucide-react'
 import { useNotifications } from '@renderer/hooks/useNotifications'
 import type { Notification } from '@shared/premium-models'
 
@@ -31,6 +31,8 @@ function getTypeIcon(type: Notification['type']) {
       return <CheckCircle size={14} className="text-emerald-400" />
     case 'message':
       return <MessageSquare size={14} className="text-codefire-orange" />
+    case 'project_invite':
+      return <FolderSync size={14} className="text-purple-400" />
     default:
       return <Bell size={14} className="text-neutral-400" />
   }

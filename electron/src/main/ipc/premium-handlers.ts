@@ -69,6 +69,26 @@ export function registerPremiumHandlers(
   ipcMain.handle('premium:unsyncProject', (_e, projectId: string) => {
     return teamService.unsyncProject(projectId)
   })
+  ipcMain.handle('premium:listSyncedProjects', (_e, teamId: string) => {
+    return teamService.listSyncedProjects(teamId)
+  })
+  ipcMain.handle('premium:inviteToProject', (_e, teamId: string, projectId: string, projectName: string, repoUrl: string | null, memberUserIds: string[]) => {
+    return teamService.inviteToProject(teamId, projectId, projectName, repoUrl, memberUserIds)
+  })
+
+  // Sync status
+  ipcMain.handle('premium:getSyncStatus', () => {
+    const states = syncEngine.getSyncStates()
+    const dirtyCount = states.filter((s) => s.dirty).length
+    const lastSynced = states
+      .filter((s) => s.lastSyncedAt)
+      .sort((a, b) => (b.lastSyncedAt! > a.lastSyncedAt! ? 1 : -1))
+    return {
+      lastSyncAt: lastSynced.length > 0 ? lastSynced[0].lastSyncedAt : null,
+      dirtyCount,
+      isSyncing: false, // SyncEngine doesn't expose isSyncing publicly; approximate
+    }
+  })
 
   // Billing
   ipcMain.handle('premium:createCheckout', async (_e, teamId: string | null, plan: string, extraSeats?: number) => {

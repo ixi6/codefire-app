@@ -754,4 +754,13 @@ export const migrations: Migration[] = [
       `)
     },
   },
+
+  // Migration 32: Add color column to projects
+  {
+    version: 32,
+    name: 'v32_addProjectColor',
+    up: (db) => {
+      db.exec(`ALTER TABLE projects ADD COLUMN color TEXT DEFAULT NULL`)
+    },
+  },
 ]
