@@ -97,6 +97,8 @@ export class TaskDAO {
       attachments?: string[]
       completedBy?: string
       createdBy?: string
+      projectId?: string
+      isGlobal?: boolean
     }
   ): TaskItem | undefined {
     const existing = this.getById(id)
@@ -128,7 +130,9 @@ export class TaskDAO {
       data.labels !== undefined ||
       data.attachments !== undefined ||
       data.completedBy !== undefined ||
-      data.createdBy !== undefined
+      data.createdBy !== undefined ||
+      (data.projectId !== undefined && data.projectId !== existing.projectId) ||
+      (data.isGlobal !== undefined && data.isGlobal !== !!existing.isGlobal)
 
     const updatedAt = hasChanges
       ? new Date().toISOString()
@@ -137,7 +141,7 @@ export class TaskDAO {
     this.db
       .prepare(
         `UPDATE taskItems
-         SET title = ?, description = ?, status = ?, priority = ?, labels = ?, attachments = ?, completedAt = ?, completedBy = ?, createdBy = ?, updatedAt = ?
+         SET title = ?, description = ?, status = ?, priority = ?, labels = ?, attachments = ?, completedAt = ?, completedBy = ?, createdBy = ?, projectId = ?, isGlobal = ?, updatedAt = ?
          WHERE id = ?`
       )
       .run(
@@ -150,6 +154,8 @@ export class TaskDAO {
         completedAt,
         completedBy,
         createdBy,
+        data.projectId ?? existing.projectId,
+        data.isGlobal !== undefined ? (data.isGlobal ? 1 : 0) : existing.isGlobal,
         updatedAt,
         id
       )

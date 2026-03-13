@@ -40,15 +40,31 @@ function getAppDataDir(): string {
   }
 }
 
-/** Read the CodeFire profile name from the settings file */
+/** Read the CodeFire profile name from the settings file.
+ *  The Electron app stores settings in its userData dir (e.g. %APPDATA%/codefire-electron/)
+ *  while the shared CodeFire dir (e.g. %APPDATA%/CodeFire/) may also contain a copy.
+ *  Check both locations. */
 function getProfileName(): string {
-  try {
-    const settingsPath = path.join(getAppDataDir(), 'codefire-settings.json')
-    const data = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
-    return data.profileName || ''
-  } catch {
-    return ''
+  const candidates = [
+    path.join(getAppDataDir(), 'codefire-settings.json'),
+  ]
+  // Electron's userData dir differs from the shared CodeFire dir on Windows/Linux
+  if (process.platform === 'win32') {
+    candidates.push(
+      path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'codefire-electron', 'codefire-settings.json')
+    )
+  } else if (process.platform !== 'darwin') {
+    candidates.push(
+      path.join(os.homedir(), '.config', 'codefire-electron', 'codefire-settings.json')
+    )
   }
+  for (const settingsPath of candidates) {
+    try {
+      const data = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+      if (data.profileName) return data.profileName
+    } catch { /* try next */ }
+  }
+  return ''
 }
 
 function openDatabase(): Database.Database {
@@ -387,9 +403,11 @@ server.registerTool(
       priority: z.number().min(0).max(4).optional().describe('New priority 0-4'),
       completedBy: z.string().optional().describe('Override who completed the task'),
       createdBy: z.string().optional().describe('Override who created the task'),
+      projectId: z.string().optional().describe('Reassign task to a different project'),
+      isGlobal: z.boolean().optional().describe('Whether this is a global task'),
     }),
   },
-  async ({ taskId, title, description, status, priority, completedBy: completedByOverride, createdBy: createdByOverride }) => {
+  async ({ taskId, title, description, status, priority, completedBy: completedByOverride, createdBy: createdByOverride, projectId, isGlobal }) => {
     const existing = db.prepare('SELECT * FROM taskItems WHERE id = ?').get(taskId) as Record<string, unknown> | undefined
     if (!existing) {
       return { content: [{ type: 'text' as const, text: `Task ${taskId} not found.` }] }
@@ -410,9 +428,12 @@ server.registerTool(
           ? null
           : existing.completedBy
     const createdBy = createdByOverride ?? existing.createdBy
-    const updatedAt = (status && status !== existing.status) || completedByOverride || createdByOverride ? now : (existing.updatedAt ?? now)
+    const hasChanges = (status && status !== existing.status) || completedByOverride || createdByOverride ||
+      (projectId !== undefined && projectId !== existing.projectId) ||
+      (isGlobal !== undefined && isGlobal !== !!existing.isGlobal)
+    const updatedAt = hasChanges ? now : (existing.updatedAt ?? now)
     db.prepare(
-      `UPDATE taskItems SET title = ?, description = ?, status = ?, priority = ?, completedAt = ?, completedBy = ?, createdBy = ?, updatedAt = ? WHERE id = ?`
+      `UPDATE taskItems SET title = ?, description = ?, status = ?, priority = ?, completedAt = ?, completedBy = ?, createdBy = ?, projectId = ?, isGlobal = ?, updatedAt = ? WHERE id = ?`
     ).run(
       title ?? existing.title,
       description ?? existing.description,
@@ -421,6 +442,8 @@ server.registerTool(
       completedAt,
       completedBy,
       createdBy,
+      projectId ?? existing.projectId,
+      isGlobal !== undefined ? (isGlobal ? 1 : 0) : existing.isGlobal,
       updatedAt,
       taskId
     )

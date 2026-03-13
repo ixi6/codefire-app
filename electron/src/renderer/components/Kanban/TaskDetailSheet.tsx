@@ -166,10 +166,8 @@ export default function TaskDetailSheet({
   }
 
   const handleAssignProject = async (projectId: string) => {
-    await window.api.invoke('tasks:update', task.id, { projectId })
-    if (projectId !== '__global__') {
-      await window.api.invoke('tasks:update', task.id, { isGlobal: false })
-    }
+    const isGlobal = projectId === '__global__'
+    await window.api.invoke('tasks:update', task.id, { projectId, isGlobal })
   }
 
   const handleAddLabel = () => {
