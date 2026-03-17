@@ -281,6 +281,14 @@ struct TerminalWrapper: NSViewRepresentable {
         return terminal
     }
 
+    static func dismantleNSView(_ nsView: FocusableTerminalView, coordinator: Coordinator) {
+        TerminalTracker.shared.unregister(nsView)
+        if let monitor = coordinator.mouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            coordinator.mouseMonitor = nil
+        }
+    }
+
     func updateNSView(_ nsView: FocusableTerminalView, context: NSViewRepresentableContext<TerminalWrapper>) {
         let wasActive = nsView.isActiveTab
         nsView.isActiveTab = isActive

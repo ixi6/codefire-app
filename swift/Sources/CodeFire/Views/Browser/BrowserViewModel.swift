@@ -5,7 +5,7 @@ class BrowserViewModel: ObservableObject {
     @Published var tabs: [BrowserTab] = []
     @Published var activeTabId: UUID?
 
-    private var cancellables = Set<AnyCancellable>()
+    private var tabCancellables: [UUID: AnyCancellable] = [:]
 
     var activeTab: BrowserTab? {
         tabs.first { $0.id == activeTabId }
@@ -17,14 +17,15 @@ class BrowserViewModel: ObservableObject {
         activeTabId = tab.id
 
         // Forward tab property changes to trigger view updates
-        tab.objectWillChange
+        tabCancellables[tab.id] = tab.objectWillChange
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
             }
-            .store(in: &cancellables)
     }
 
     func closeTab(_ id: UUID) {
+        tabCancellables[id]?.cancel()
+        tabCancellables.removeValue(forKey: id)
         tabs.removeAll { $0.id == id }
         if activeTabId == id {
             activeTabId = tabs.last?.id
@@ -45,11 +46,10 @@ class BrowserViewModel: ObservableObject {
         activeTabId = tab.id
 
         // Forward tab property changes
-        tab.objectWillChange
+        tabCancellables[tab.id] = tab.objectWillChange
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
             }
-            .store(in: &cancellables)
 
         if let url = url, !url.isEmpty {
             tab.navigate(to: url)

@@ -433,9 +433,11 @@ struct TeamSettingsTab: View {
                             if enabled {
                                 SyncEngine.shared.start()
                                 premiumService.status.syncEnabled = true
+                                SharedServices.shared.appSettings.cloudSyncEnabled = true
                             } else {
                                 SyncEngine.shared.stop()
                                 premiumService.status.syncEnabled = false
+                                SharedServices.shared.appSettings.cloudSyncEnabled = false
                             }
                         }
                     ))

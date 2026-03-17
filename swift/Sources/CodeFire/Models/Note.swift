@@ -11,6 +11,8 @@ struct Note: Codable, Identifiable, FetchableRecord, MutablePersistableRecord {
     var createdAt: Date
     var updatedAt: Date
     var isGlobal: Bool = false
+    var remoteOwnerId: String?
+    var remoteOwnerName: String?
 
     static let databaseTableName = "notes"
 

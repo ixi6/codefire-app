@@ -605,31 +605,31 @@ class ContextEngine: ObservableObject {
                 }
 
                 let batchesCopy = batches
-                let groupProcessed = await Task.detached {
-                    await withTaskGroup(of: Int.self, returning: Int.self) { group in
-                        for batch in batchesCopy {
-                            group.addTask {
-                                let texts = batch.map { $0.content }
-                                let result = await client.embedBatch(texts)
-                                try? await DatabaseService.shared.dbQueue.write { db in
-                                    for (i, item) in batch.enumerated() {
-                                        if i < result.embeddings.count && !result.embeddings[i].isEmpty {
-                                            let encoded = CodeChunk.encodeEmbedding(result.embeddings[i])
-                                            try db.execute(
-                                                sql: "UPDATE codeChunks SET embedding = ? WHERE id = ?",
-                                                arguments: [encoded, item.id]
-                                            )
-                                        }
+                // Use structured child tasks (not Task.detached) so cancellation propagates
+                let groupProcessed = await withTaskGroup(of: Int.self, returning: Int.self) { group in
+                    for batch in batchesCopy {
+                        group.addTask {
+                            guard !Task.isCancelled else { return 0 }
+                            let texts = batch.map { $0.content }
+                            let result = await client.embedBatch(texts)
+                            try? await DatabaseService.shared.dbQueue.write { db in
+                                for (i, item) in batch.enumerated() {
+                                    if i < result.embeddings.count && !result.embeddings[i].isEmpty {
+                                        let encoded = CodeChunk.encodeEmbedding(result.embeddings[i])
+                                        try db.execute(
+                                            sql: "UPDATE codeChunks SET embedding = ? WHERE id = ?",
+                                            arguments: [encoded, item.id]
+                                        )
                                     }
                                 }
-                                return batch.count
                             }
+                            return batch.count
                         }
-                        var sum = 0
-                        for await count in group { sum += count }
-                        return sum
                     }
-                }.value
+                    var sum = 0
+                    for await count in group { sum += count }
+                    return sum
+                }
 
                 guard !Task.isCancelled else { break }
 

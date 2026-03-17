@@ -390,6 +390,7 @@ class SyncEngine: ObservableObject {
 
         guard let remoteTasks = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
 
+        let currentUserId = premium.status.user?.id
         try await db.write { db in
             for remote in remoteTasks {
                 guard let remoteId = remote["id"] as? String else { continue }
@@ -415,7 +416,7 @@ class SyncEngine: ObservableObject {
                         try db.execute(sql: "UPDATE syncState SET dirty = 0, lastSyncedAt = CURRENT_TIMESTAMP WHERE entityType = 'task' AND localId = CAST(? AS TEXT)", arguments: [localId])
                     }
                 } else {
-                    let localId = try Self.createLocalTask(from: remote, projectId: projectId, in: db)
+                    let localId = try Self.createLocalTask(from: remote, projectId: projectId, currentUserId: currentUserId, in: db)
                     try SyncState.register(entityType: .task, localId: localId, projectId: projectId, in: db)
                     try SyncState.markSynced(entityType: .task, localId: localId, remoteId: remoteId, in: db)
                 }
@@ -436,6 +437,7 @@ class SyncEngine: ObservableObject {
 
         guard let remoteNotes = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
 
+        let currentUserId = premium.status.user?.id
         try await db.write { db in
             for remote in remoteNotes {
                 guard let remoteId = remote["id"] as? String else { continue }
@@ -461,7 +463,7 @@ class SyncEngine: ObservableObject {
                         try db.execute(sql: "UPDATE syncState SET dirty = 0, lastSyncedAt = CURRENT_TIMESTAMP WHERE entityType = 'note' AND localId = CAST(? AS TEXT)", arguments: [localId])
                     }
                 } else {
-                    let localId = try Self.createLocalNote(from: remote, projectId: projectId, in: db)
+                    let localId = try Self.createLocalNote(from: remote, projectId: projectId, currentUserId: currentUserId, in: db)
                     try SyncState.register(entityType: .note, localId: localId, projectId: projectId, in: db)
                     try SyncState.markSynced(entityType: .note, localId: localId, remoteId: remoteId, in: db)
                 }
@@ -490,7 +492,7 @@ class SyncEngine: ObservableObject {
         try task.update(db)
     }
 
-    nonisolated private static func createLocalTask(from remote: [String: Any], projectId: String, in db: Database) throws -> Int64 {
+    nonisolated private static func createLocalTask(from remote: [String: Any], projectId: String, currentUserId: String?, in db: Database) throws -> Int64 {
         var task = TaskItem(
             projectId: projectId,
             title: remote["title"] as? String ?? "",
@@ -508,6 +510,11 @@ class SyncEngine: ObservableObject {
                 task.labels = str
             }
         }
+        // Attribution: track who created this task remotely
+        task.remoteOwnerId = remote["created_by"] as? String
+        if let createdBy = remote["created_by"] as? String, createdBy != currentUserId {
+            task.remoteOwnerName = remote["created_by_name"] as? String
+        }
         try task.insert(db)
         return task.id!
     }
@@ -521,7 +528,7 @@ class SyncEngine: ObservableObject {
         try note.update(db)
     }
 
-    nonisolated private static func createLocalNote(from remote: [String: Any], projectId: String, in db: Database) throws -> Int64 {
+    nonisolated private static func createLocalNote(from remote: [String: Any], projectId: String, currentUserId: String?, in db: Database) throws -> Int64 {
         var note = Note(
             projectId: projectId,
             title: remote["title"] as? String ?? "",
@@ -530,6 +537,11 @@ class SyncEngine: ObservableObject {
             createdAt: parseDate(remote["created_at"]) ?? Date(),
             updatedAt: parseDate(remote["updated_at"]) ?? Date()
         )
+        // Attribution: track who created this note remotely
+        note.remoteOwnerId = remote["created_by"] as? String
+        if let createdBy = remote["created_by"] as? String, createdBy != currentUserId {
+            note.remoteOwnerName = remote["created_by_name"] as? String
+        }
         try note.insert(db)
         return note.id!
     }

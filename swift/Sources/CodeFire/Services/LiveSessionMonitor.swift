@@ -321,7 +321,7 @@ class LiveSessionMonitor: ObservableObject {
                     var detail = toolName
                     if let input = block["input"] as? [String: Any],
                        let filePath = input["file_path"] as? String {
-                        if !state.filesChanged.contains(filePath) {
+                        if state.filesChanged.count < 500, !state.filesChanged.contains(filePath) {
                             state.filesChanged.append(filePath)
                         }
                         let filename = (filePath as NSString).lastPathComponent

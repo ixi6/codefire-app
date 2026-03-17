@@ -441,6 +441,9 @@ class RealtimeClient: NSObject, URLSessionWebSocketDelegate {
             print("RealtimeClient: reconnecting (attempt \(self.reconnectAttempts))")
             self.webSocket?.cancel(with: .goingAway, reason: nil)
             self.webSocket = nil
+            // Invalidate old URLSession to prevent thread pool leak
+            self.session?.invalidateAndCancel()
+            self.session = nil
             self.connect(accessToken: self.accessToken)
         }
     }

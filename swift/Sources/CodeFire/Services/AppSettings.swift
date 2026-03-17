@@ -58,6 +58,9 @@ class AppSettings: ObservableObject {
     @Published var premiumEnabled: Bool {
         didSet { UserDefaults.standard.set(premiumEnabled, forKey: "premiumEnabled") }
     }
+    @Published var cloudSyncEnabled: Bool {
+        didSet { UserDefaults.standard.set(cloudSyncEnabled, forKey: "cloudSyncEnabled") }
+    }
     @Published var supabaseUrl: String {
         didSet { UserDefaults.standard.set(supabaseUrl, forKey: "supabaseUrl") }
     }
@@ -138,6 +141,7 @@ class AppSettings: ObservableObject {
         self.networkBodyLimit = defaults.object(forKey: "networkBodyLimit") as? Int ?? 51200
 
         self.premiumEnabled = defaults.object(forKey: "premiumEnabled") as? Bool ?? false
+        self.cloudSyncEnabled = defaults.object(forKey: "cloudSyncEnabled") as? Bool ?? false
         self.supabaseUrl = defaults.string(forKey: "supabaseUrl") ?? "https://hofreldxofygaerodowt.supabase.co"
         self.supabaseAnonKey = defaults.string(forKey: "supabaseAnonKey") ?? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhvZnJlbGR4b2Z5Z2Flcm9kb3d0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4Mjc2NjksImV4cCI6MjA4ODQwMzY2OX0.MBwqQBeDfu9uxb99tYTZD54P_U3tjuh2zddMUjTlCuA"
 

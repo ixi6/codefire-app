@@ -15,6 +15,18 @@ final class TerminalTracker {
         terminals[ObjectIdentifier(view)] = WeakTerminalRef(view: view)
     }
 
+    func unregister(_ view: LocalProcessTerminalView) {
+        let key = ObjectIdentifier(view)
+        // Gracefully signal the shell to exit (SIGHUP only — no SIGKILL for normal tab close)
+        if let process = view.process {
+            let pid = process.shellPid
+            if pid > 0 {
+                kill(pid, SIGHUP)
+            }
+        }
+        terminals.removeValue(forKey: key)
+    }
+
     func terminateAll() {
         for (_, ref) in terminals {
             if let process = ref.view?.process {

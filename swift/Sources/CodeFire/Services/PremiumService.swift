@@ -103,6 +103,16 @@ class PremiumService: ObservableObject {
             print("PremiumService: restored user \(status.user?.email ?? "?")")
             await loadTeamMembership()
             print("PremiumService: team=\(status.team?.name ?? "none"), subscriptionActive=\(status.subscriptionActive)")
+
+            // Auto-start sync if user previously enabled it and has a team
+            if status.team != nil {
+                let syncEnabled = SharedServices.shared.appSettings.cloudSyncEnabled
+                status.syncEnabled = syncEnabled
+                if syncEnabled {
+                    SyncEngine.shared.start()
+                    print("PremiumService: auto-started SyncEngine (cloudSyncEnabled was persisted)")
+                }
+            }
         } catch {
             print("PremiumService: failed to restore user profile: \(error)")
         }

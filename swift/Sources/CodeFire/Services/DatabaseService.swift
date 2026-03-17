@@ -591,6 +591,17 @@ class DatabaseService {
             try db.execute(sql: "ALTER TABLE sessions ADD COLUMN title TEXT")
         }
 
+        migrator.registerMigration("v24_addRemoteOwnerColumns") { db in
+            try db.alter(table: "taskItems") { t in
+                t.add(column: "remoteOwnerId", .text)
+                t.add(column: "remoteOwnerName", .text)
+            }
+            try db.alter(table: "notes") { t in
+                t.add(column: "remoteOwnerId", .text)
+                t.add(column: "remoteOwnerName", .text)
+            }
+        }
+
         return migrator
     }
 }
