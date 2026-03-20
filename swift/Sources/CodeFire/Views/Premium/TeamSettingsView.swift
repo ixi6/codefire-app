@@ -175,12 +175,26 @@ struct TeamSettingsTab: View {
                             .font(.system(size: 11))
                             .foregroundColor(.red)
                         }
+                    } else if premiumService.isRestoringSession {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                                .scaleEffect(0.7)
+                            Text("Loading profile...")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
                     } else {
                         HStack {
                             Text("Session expired or failed to load profile.")
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)
                             Spacer()
+                            Button("Retry") {
+                                Task { await premiumService.ensureProfileLoaded() }
+                            }
+                            .font(.system(size: 11))
+                            .foregroundColor(.accentColor)
                             Button("Sign Out") {
                                 premiumService.signOut()
                             }
@@ -214,6 +228,8 @@ struct TeamSettingsTab: View {
             }
         }
         .task {
+            // Ensure profile is loaded when this view appears
+            await premiumService.ensureProfileLoaded()
             if premiumService.status.team == nil {
                 await loadPendingInvites()
             }
@@ -601,7 +617,7 @@ struct TeamSettingsTab: View {
 
     private func loadLocalProjects(teamId: String) async {
         do {
-            let projects: [(id: String, name: String, repoUrl: String?)] = try await DatabaseService.shared.db.read { db in
+            let projects: [(id: String, name: String, repoUrl: String?)] = try await DatabaseService.shared.dbQueue.read { db in
                 try Row.fetchAll(db, sql: "SELECT id, name, repoUrl FROM projects WHERE id != '__global__' ORDER BY name")
                     .map { (id: $0["id"], name: $0["name"], repoUrl: $0["repoUrl"]) }
             }

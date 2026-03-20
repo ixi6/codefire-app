@@ -17,6 +17,7 @@ class PremiumService: ObservableObject {
     )
     @Published var notifications: [PremiumNotification] = []
     @Published var unreadCount: Int = 0
+    @Published var isRestoringSession: Bool = false
 
     // Auth tokens stored in KeychainHelper
     private var accessToken: String?
@@ -60,19 +61,34 @@ class PremiumService: ObservableObject {
         }
     }
 
+    /// Called from the view layer to ensure the profile is loaded.
+    /// Safe to call multiple times — no-ops if already loaded or no token.
+    func ensureProfileLoaded() async {
+        guard accessToken != nil, status.user == nil, !isRestoringSession else { return }
+        await restoreUserProfile()
+    }
+
     private func restoreUserProfile() async {
         guard let token = accessToken else {
             print("PremiumService: no access token, skipping restore")
             return
         }
-        if baseURL.isEmpty || anonKey.isEmpty {
-            print("PremiumService: baseURL or anonKey empty, retrying in 1s...")
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            if baseURL.isEmpty || anonKey.isEmpty {
-                print("PremiumService: still empty after retry, giving up")
-                return
-            }
+        isRestoringSession = true
+        defer { isRestoringSession = false }
+
+        // Wait for Supabase settings to become available (up to 5s with backoff)
+        var waited = 0
+        while (baseURL.isEmpty || anonKey.isEmpty) && waited < 5 {
+            let delay = waited == 0 ? 500_000_000 : 1_000_000_000  // 0.5s first, then 1s
+            try? await Task.sleep(nanoseconds: UInt64(delay))
+            waited += 1
+            print("PremiumService: waiting for Supabase config... attempt \(waited)")
         }
+        if baseURL.isEmpty || anonKey.isEmpty {
+            print("PremiumService: baseURL or anonKey still empty after \(waited)s, giving up")
+            return
+        }
+
         var request = URLRequest(url: URL(string: baseURL + "/auth/v1/user")!)
         request.setValue(anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -80,10 +96,26 @@ class PremiumService: ObservableObject {
             let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, http.statusCode == 401 {
                 print("PremiumService: token expired (401), attempting refresh...")
-                if let _ = try? await refreshSession() {
-                    await restoreUserProfile()
-                } else {
-                    print("PremiumService: refresh failed, clearing tokens")
+                do {
+                    try await refreshSession()
+                    // Retry with the new token
+                    guard let newToken = accessToken else { return }
+                    var retryRequest = URLRequest(url: URL(string: baseURL + "/auth/v1/user")!)
+                    retryRequest.setValue(anonKey, forHTTPHeaderField: "apikey")
+                    retryRequest.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+                    let (retryData, retryResponse) = try await URLSession.shared.data(for: retryRequest)
+                    if let retryHttp = retryResponse as? HTTPURLResponse, retryHttp.statusCode == 200 {
+                        let user = try decoder.decode(AuthUser.self, from: retryData)
+                        setUserFromAuth(user)
+                        await loadTeamMembership()
+                        autoStartSyncIfNeeded()
+                    } else {
+                        print("PremiumService: retry after refresh still failed, signing out")
+                        clearTokens()
+                        status.authenticated = false
+                    }
+                } catch {
+                    print("PremiumService: refresh failed: \(error), signing out")
                     clearTokens()
                     status.authenticated = false
                 }
@@ -94,27 +126,33 @@ class PremiumService: ObservableObject {
                 return
             }
             let user = try decoder.decode(AuthUser.self, from: data)
-            status.user = PremiumUser(
-                id: user.id,
-                email: user.email ?? "",
-                displayName: user.userMetadata?["display_name"] as? String ?? user.email ?? "",
-                avatarUrl: user.userMetadata?["avatar_url"] as? String
-            )
+            setUserFromAuth(user)
             print("PremiumService: restored user \(status.user?.email ?? "?")")
             await loadTeamMembership()
             print("PremiumService: team=\(status.team?.name ?? "none"), subscriptionActive=\(status.subscriptionActive)")
-
-            // Auto-start sync if user previously enabled it and has a team
-            if status.team != nil {
-                let syncEnabled = SharedServices.shared.appSettings.cloudSyncEnabled
-                status.syncEnabled = syncEnabled
-                if syncEnabled {
-                    SyncEngine.shared.start()
-                    print("PremiumService: auto-started SyncEngine (cloudSyncEnabled was persisted)")
-                }
-            }
+            autoStartSyncIfNeeded()
         } catch {
             print("PremiumService: failed to restore user profile: \(error)")
+        }
+    }
+
+    private func setUserFromAuth(_ user: AuthUser) {
+        status.user = PremiumUser(
+            id: user.id,
+            email: user.email ?? "",
+            displayName: user.userMetadata?["display_name"] as? String ?? user.email ?? "",
+            avatarUrl: user.userMetadata?["avatar_url"] as? String
+        )
+    }
+
+    private func autoStartSyncIfNeeded() {
+        if status.team != nil {
+            let syncEnabled = SharedServices.shared.appSettings.cloudSyncEnabled
+            status.syncEnabled = syncEnabled
+            if syncEnabled {
+                SyncEngine.shared.start()
+                print("PremiumService: auto-started SyncEngine (cloudSyncEnabled was persisted)")
+            }
         }
     }
 
