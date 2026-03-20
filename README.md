@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="https://codefire.app">Website</a> · <a href="https://codefire.app/getting-started">Getting Started</a> · <a href="https://github.com/websitebutlers/codefire-app/discussions">Community</a> · <a href="https://github.com/websitebutlers/codefire-app/releases/latest">Download</a>
+  <a href="https://codefire.app">Website</a> · <a href="https://codefire.app/getting-started">Getting Started</a> · <a href="https://discord.gg/cMtjR83D">Discord</a> · <a href="https://github.com/websitebutlers/codefire-app/discussions">Community</a> · <a href="https://github.com/websitebutlers/codefire-app/releases/latest">Download</a>
 </p>
 
 ---
