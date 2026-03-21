@@ -2,14 +2,31 @@ import SwiftUI
 
 struct ActivityFeedView: View {
     @EnvironmentObject var appState: AppState
+    @ObservedObject private var premiumService = PremiumService.shared
     @State private var events: [ActivityEvent] = []
     @State private var summaries: [SessionSummary] = []
     @State private var showSummaries = false
     @State private var isLoading = false
-
-    private var premiumService: PremiumService { PremiumService.shared }
+    @State private var loadError: String?
 
     var body: some View {
+        Group {
+            if premiumService.isRestoringSession {
+                ProgressView("Loading session...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                activityContent
+            }
+        }
+        .task {
+            await premiumService.ensureProfileLoaded()
+            if premiumService.status.user != nil {
+                await loadData()
+            }
+        }
+    }
+
+    private var activityContent: some View {
         VStack(spacing: 0) {
             // Header with toggle
             HStack(spacing: 12) {
@@ -42,14 +59,27 @@ struct ActivityFeedView: View {
             if isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                VStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 24))
+                        .foregroundColor(.orange)
+                    Text(error)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("Retry") {
+                        Task { await loadData() }
+                    }
+                    .font(.system(size: 11))
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if showSummaries {
                 summariesList
             } else {
                 eventsList
             }
-        }
-        .task {
-            await loadData()
         }
     }
 
@@ -113,10 +143,12 @@ struct ActivityFeedView: View {
     private func loadData() async {
         guard let projectId = appState.currentProject?.id else { return }
         isLoading = true
+        loadError = nil
         do {
             events = try await premiumService.getActivityFeed(projectId: projectId)
             summaries = try await premiumService.listSessionSummaries(projectId: projectId)
         } catch {
+            loadError = "Failed to load activity: \(error.localizedDescription)"
             print("ActivityFeed: failed to load: \(error)")
         }
         isLoading = false

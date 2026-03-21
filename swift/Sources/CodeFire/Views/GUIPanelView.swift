@@ -80,6 +80,7 @@ class MCPConnectionMonitor: ObservableObject {
 struct GUIPanelView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var contextEngine: ContextEngine
+    @ObservedObject private var premiumService = PremiumService.shared
     @StateObject private var mcpMonitor = MCPConnectionMonitor()
     @StateObject private var browserViewModel = BrowserViewModel()
     @StateObject private var browserCommandExecutor = BrowserCommandExecutor()
@@ -215,6 +216,13 @@ struct GUIPanelView: View {
             mcpMonitor.stopPolling()
             browserCommandExecutor.stop()
         }
+        .onChange(of: premiumService.status.authenticated) { _, _ in
+            // If user signed out while viewing a team tab, fall back to Tasks
+            if Self.teamTabs.contains(appState.selectedTab) &&
+               !(premiumService.status.authenticated && premiumService.status.user != nil) {
+                appState.selectedTab = .tasks
+            }
+        }
     }
 
     // MARK: - Project Header
@@ -326,11 +334,23 @@ struct GUIPanelView: View {
     /// Tabs hidden from the tab bar (but code kept for later re-enabling).
     private static let hiddenTabs: Set<AppState.GUITab> = [.visualize]
 
+    /// Tabs that require team authentication (Supabase session).
+    private static let teamTabs: Set<AppState.GUITab> = [.activity, .docs, .reviews]
+
+    private var visibleTabs: [AppState.GUITab] {
+        let isAuthenticated = premiumService.status.authenticated && premiumService.status.user != nil
+        return AppState.GUITab.allCases.filter { tab in
+            if Self.hiddenTabs.contains(tab) { return false }
+            if Self.teamTabs.contains(tab) && !isAuthenticated { return false }
+            return true
+        }
+    }
+
     private var tabBar: some View {
         GeometryReader { geometry in
             let iconOnly = geometry.size.width < 600
             HStack(spacing: 2) {
-                ForEach(AppState.GUITab.allCases.filter { !Self.hiddenTabs.contains($0) }, id: \.self) { tab in
+                ForEach(visibleTabs, id: \.self) { tab in
                     TabButton(tab: tab, isSelected: appState.selectedTab == tab, iconOnly: iconOnly) {
                         withAnimation(.easeInOut(duration: 0.15)) {
                             appState.selectedTab = tab

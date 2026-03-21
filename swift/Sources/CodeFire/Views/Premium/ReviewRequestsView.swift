@@ -2,11 +2,11 @@ import SwiftUI
 
 struct ReviewRequestsView: View {
     @EnvironmentObject var appState: AppState
+    @ObservedObject private var premiumService = PremiumService.shared
     @State private var reviews: [ReviewRequest] = []
     @State private var isLoading = false
     @State private var showNewReview = false
-
-    private var premiumService: PremiumService { PremiumService.shared }
+    @State private var loadError: String?
 
     private var pendingReviews: [ReviewRequest] {
         reviews.filter { $0.status == "pending" }
@@ -25,6 +25,23 @@ struct ReviewRequestsView: View {
     }
 
     var body: some View {
+        Group {
+            if premiumService.isRestoringSession {
+                ProgressView("Loading session...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                reviewsContent
+            }
+        }
+        .task {
+            await premiumService.ensureProfileLoaded()
+            if premiumService.status.user != nil {
+                await loadReviews()
+            }
+        }
+    }
+
+    private var reviewsContent: some View {
         VStack(spacing: 0) {
             // Header
             HStack {
@@ -61,6 +78,22 @@ struct ReviewRequestsView: View {
             if isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                VStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 24))
+                        .foregroundColor(.orange)
+                    Text(error)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("Retry") {
+                        Task { await loadReviews() }
+                    }
+                    .font(.system(size: 11))
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if reviews.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "arrow.triangle.pull")
@@ -94,9 +127,6 @@ struct ReviewRequestsView: View {
                 }
             }
         }
-        .task {
-            await loadReviews()
-        }
     }
 
     // MARK: - Section
@@ -129,9 +159,11 @@ struct ReviewRequestsView: View {
     private func loadReviews() async {
         guard let projectId = appState.currentProject?.id else { return }
         isLoading = true
+        loadError = nil
         do {
             reviews = try await premiumService.listReviewRequests(projectId: projectId)
         } catch {
+            loadError = "Failed to load reviews: \(error.localizedDescription)"
             print("Reviews: failed to load: \(error)")
         }
         isLoading = false
