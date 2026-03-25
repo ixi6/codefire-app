@@ -161,24 +161,17 @@ struct ProjectWindowView: View {
                 try Project.fetchOne(db, key: projectId)
             }
             guard let loaded else { return }
-
-            // Set project + path immediately so the terminal renders instantly.
             project = loaded
             projectPath = loaded.path
             appState.selectProject(loaded)
             appState.loadProjects()
-
-            // Defer heavy service startup to the next run loop tick so
-            // SwiftUI can render the terminal before these block the main thread.
-            DispatchQueue.main.async { [self] in
-                sessionWatcher.watchProject(loaded)
-                devEnvironment.scan(projectPath: loaded.path)
-                projectAnalyzer.scan(projectPath: loaded.path)
-                githubService.startMonitoring(projectPath: loaded.path)
-                contextEngine.startIndexing(projectId: loaded.id, projectPath: loaded.path)
-                if let claudeDir = loaded.claudeProject {
-                    liveMonitor.startMonitoring(claudeProjectPath: claudeDir)
-                }
+            sessionWatcher.watchProject(loaded)
+            devEnvironment.scan(projectPath: loaded.path)
+            projectAnalyzer.scan(projectPath: loaded.path)
+            githubService.startMonitoring(projectPath: loaded.path)
+            contextEngine.startIndexing(projectId: loaded.id, projectPath: loaded.path)
+            if let claudeDir = loaded.claudeProject {
+                liveMonitor.startMonitoring(claudeProjectPath: claudeDir)
             }
         } catch {
             print("Failed to load project \(projectId): \(error)")
